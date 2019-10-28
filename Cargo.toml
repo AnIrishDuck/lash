@@ -1,0 +1,12 @@
+[package]
+name = "lash"
+version = "0.1.0"
+authors = ["Frank Murphy <fmurphy@instructure.com>"]
+edition = "2018"
+
+[dependencies]
+env_logger = "0.5.13"
+futures = "0.1"
+log = "0.4"
+rand = "0.5"
+tokio = "0.1.11"
