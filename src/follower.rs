@@ -57,14 +57,17 @@ pub fn append_entries<Record: Unique> (raft: &mut Raft<Record>, request: AppendE
         trace!("Log updated; new size: {}", my_count);
 
         let leader_count = request.leader_commit;
-        if leader_count > raft.volatile_state.commit_count {
-            let min_count = min(leader_count, my_count);
-            raft.volatile_state.commit_count = min_count;
-            trace!(
-                "Leader commit count {}, my commit count: {}",
-                leader_count,
-                min_count
-            );
+        {
+            let commit_count = Rc::get_mut(&mut raft.volatile_state.commit_count).unwrap();
+            if leader_count > *commit_count {
+                let min_count = min(leader_count, my_count);
+                *commit_count = min_count;
+                trace!(
+                    "Leader commit count {}, my commit count: {}",
+                    leader_count,
+                    min_count
+                );
+            }
         }
 
         true
@@ -117,7 +120,7 @@ mod tests {
 
             assert_eq!(response.term, 0);
             assert_eq!(response.success, true);
-            assert_eq!(raft.volatile_state.commit_count, 3);
+            assert_eq!(*raft.volatile_state.commit_count, 3);
         }
         assert_eq!(log.record_vec(), vec![(0, 1), (0, 2), (0, 3)]);
     }

@@ -363,7 +363,7 @@ mod tests {
                 let node = cell.borrow();
                 let log = node.log.record_vec();
                 assert_eq!(leader_log, log);
-                assert_eq!(node.raft.volatile_state.commit_count, final_index + 1);
+                assert_eq!(*node.raft.volatile_state.commit_count, final_index + 1);
             }
         }
     }
@@ -411,7 +411,7 @@ mod tests {
                 let node = cell.borrow();
                 let log = node.log.record_vec();
                 assert_eq!(leader_log, log);
-                assert_eq!(node.raft.volatile_state.commit_count, final_index + 1);
+                assert_eq!(*node.raft.volatile_state.commit_count, final_index + 1);
             }
         }
     }
@@ -452,7 +452,7 @@ mod tests {
                         }
                     }
 
-                    let official = leader.raft.volatile_state.commit_count;
+                    let official = *leader.raft.volatile_state.commit_count;
                     trace!("official {} prior {}", official, final_index);
                     final_index = official;
                 }

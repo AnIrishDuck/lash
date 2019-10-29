@@ -7,6 +7,7 @@ extern crate futures;
 use logging::{debug, trace};
 
 use futures::{future, Future};
+use std::rc::Rc;
 use std::cmp::min;
 use std::fmt::{Debug};
 
@@ -49,7 +50,7 @@ pub fn count_to_index(count: u64) -> Option<u64> {
 pub struct VolatileState<'a> {
     // note: we stray slightly from the spec here. a "commit index" might not
     // exist in the startup state where no values have been proposed.
-    pub commit_count: u64,
+    pub commit_count: Rc<u64>,
     // we will track last_applied in the state machine
     candidate: candidate::State<'a>,
     leader: leader::State<'a>,
@@ -134,7 +135,7 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
     pub fn new (cluster: Cluster<'a>, config: &'a Config, log: Box<Log<Record> + 'a>, link: Box<Link<Record> + 'a>) -> Self {
         let volatile = VolatileState {
             candidate: candidate::State::new(),
-            commit_count: 0,
+            commit_count: Rc::new(0),
             follower: follower::State::new(),
             leader: leader::State::new()
         };
