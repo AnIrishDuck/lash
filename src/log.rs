@@ -69,6 +69,11 @@ impl<Record: Clone + Debug + Unique> Log<Record> for MemoryLog<Record> {
         records.extend(update);
     }
 
+    fn lookup_id (&self, id: &String) -> Option<u64> {
+        let v = self.state.borrow().records.iter().position(|(_term, r)| r.id() == *id).map(|v| v as u64);
+        v
+    }
+
     fn get_batch (&self, index: u64) -> Vec<(u64, Box<Record>)> {
         let ref records = self.state.borrow().records;
         let start = min(index as usize, records.len());

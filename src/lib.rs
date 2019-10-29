@@ -33,6 +33,8 @@ pub trait Log<Record: Unique> {
     fn get_entry (&self, index: u64) -> Option<(u64, Box<Record>)>;
     fn insert (&mut self, index: u64, records: Vec<(u64, Box<Record>)>);
 
+    fn lookup_id (&self, id: &String) -> Option<u64>;
+
     fn get_batch (&self, index: u64) -> Vec<(u64, Box<Record>)>;
 }
 
@@ -232,10 +234,15 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
     pub fn propose (&mut self, r: Box<Record>) -> Option<u64> {
         match self.role {
             Role::Leader => {
-                let term = self.log.get_current_term();
-                let count = self.log.get_count();
-                self.log.insert(count, vec![(term, r)]);
-                Some(count + 1)
+                Some(
+                    self.log.lookup_id(&r.id()).unwrap_or_else(|| {
+                        let term = self.log.get_current_term();
+                        let count = self.log.get_count();
+                        trace!("Leader recording proposal {:?} => {}", r.id(), count);
+                        self.log.insert(count, vec![(term, r)]);
+                        count
+                    })
+                )
             },
             _ => None
         }

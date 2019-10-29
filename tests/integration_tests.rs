@@ -363,7 +363,55 @@ mod tests {
                 let node = cell.borrow();
                 let log = node.log.record_vec();
                 assert_eq!(leader_log, log);
-                assert_eq!(node.raft.volatile_state.commit_count, final_index);
+                assert_eq!(node.raft.volatile_state.commit_count, final_index + 1);
+            }
+        }
+    }
+
+    #[test]
+    fn leader_ignores_duplicates () {
+        let _ = env_logger::try_init();
+        let a: String = "a".to_owned();
+        let b: String = "b".to_owned();
+        let c: String = "c".to_owned();
+        let ids: Vec<&String> = vec![&a, &b, &c];
+
+        {
+            let switch = Switchboard::new(ids);
+
+            for _ in 0..100 {
+                switch.tick();
+                switch.process_all_messages();
+            }
+
+            let mut final_index = 0;
+            let leader_log = {
+                let leader_id = switch.leader().unwrap();
+                let mut leader = switch.nodes.get(leader_id).unwrap().borrow_mut();
+
+                for i in 0..47 {
+                    let committed = leader.raft.propose(Box::new(Record(i))).unwrap();
+                    let other = leader.raft.propose(Box::new(Record(i))).unwrap();
+                    assert!(committed >= final_index);
+                    assert!(committed == other);
+                    final_index = committed;
+                }
+
+                leader.log.record_vec()
+            };
+
+            info!("proposal complete");
+
+            for _ in 0..50 {
+                switch.tick();
+                switch.process_all_messages();
+            }
+
+            for cell in switch.nodes.values() {
+                let node = cell.borrow();
+                let log = node.log.record_vec();
+                assert_eq!(leader_log, log);
+                assert_eq!(node.raft.volatile_state.commit_count, final_index + 1);
             }
         }
     }
