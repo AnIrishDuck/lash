@@ -11,13 +11,13 @@ impl State {
     }
 }
 
-pub fn become_follower<Record> (raft: &mut Raft<Record>) {
+pub fn become_follower<Record: Unique> (raft: &mut Raft<Record>) {
     raft.volatile_state.follower = State::new();
     raft.log.set_voted_for(None);
     raft.role = Role::Follower;
 }
 
-pub fn tick<'a, Record: Debug> (raft: &mut Raft<'a, Record>) {
+pub fn tick<'a, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
     let ticks = {
         let ref mut ticks = raft.volatile_state.follower.heartbeat_ticks;
         *ticks += 1;
@@ -31,7 +31,7 @@ pub fn tick<'a, Record: Debug> (raft: &mut Raft<'a, Record>) {
     }
 }
 
-pub fn append_entries<Record> (raft: &mut Raft<Record>, request: AppendEntries<Record>) -> bool {
+pub fn append_entries<Record: Unique> (raft: &mut Raft<Record>, request: AppendEntries<Record>) -> bool {
     let current_term = raft.log.get_current_term();
     let mut my_count = raft.log.get_count();
 
@@ -90,6 +90,12 @@ mod tests {
 
     fn boxed(raw: Vec<(u64, u64)>) -> Vec<(u64, Box<u64>)> {
         raw.iter().map(|(t, v)| (*t, Box::new(*v))).collect()
+    }
+
+    impl Unique for u64 {
+        fn id(&self) -> String {
+            self.to_string()
+        }
     }
 
     #[test]

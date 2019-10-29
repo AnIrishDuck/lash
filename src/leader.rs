@@ -26,7 +26,7 @@ impl<'a> State<'a> {
     }
 }
 
-pub fn become_leader<'a, Record> (raft: &mut Raft<'a, Record>) {
+pub fn become_leader<'a, Record: Unique> (raft: &mut Raft<'a, Record>) {
     let count = raft.volatile_state.commit_count;
     info!("Becoming Leader with consensus commit count {}", count);
     raft.role = Role::Leader;
@@ -44,7 +44,7 @@ pub fn become_leader<'a, Record> (raft: &mut Raft<'a, Record>) {
     raft.volatile_state.leader = State { followers: followers };
 }
 
-pub fn tick<'a, Record: Debug> (raft: &mut Raft<'a, Record>) {
+pub fn tick<'a, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
     let term = raft.log.get_current_term();
 
     let mut highest_term = 0;

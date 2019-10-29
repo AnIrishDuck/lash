@@ -15,6 +15,17 @@ mod tests {
 
     extern crate env_logger;
 
+    #[derive(Clone, Debug, PartialEq)]
+    struct Record(u64);
+
+    impl Unique for Record {
+        fn id(&self) -> String {
+            match self {
+                Record(v) => v.to_string()
+            }
+        }
+    }
+
     #[derive(Clone)]
     struct Call<Request, Response> {
         request: Request,
@@ -58,7 +69,7 @@ mod tests {
     #[derive(Clone)]
     struct SwitchLink {
         id: String,
-        append: Incoming<AppendEntries<u64>, Append>,
+        append: Incoming<AppendEntries<Record>, Append>,
         vote: Incoming<RequestVote, Vote>,
     }
 
@@ -72,8 +83,8 @@ mod tests {
         }
     }
 
-    impl Link<u64> for SwitchLink {
-        fn append_entries(&self, id: &String, r: AppendEntries<u64>) -> Box<AppendResponse> {
+    impl Link<Record> for SwitchLink {
+        fn append_entries(&self, id: &String, r: AppendEntries<Record>) -> Box<AppendResponse> {
             trace!("{} => {:?} => {}", self.id, r, id);
             let ref mut calls = self.append.borrow_mut();
             assert!(!calls.contains_key(id));
@@ -93,9 +104,9 @@ mod tests {
     }
 
     struct Node<'a> {
-        raft: Raft<'a, u64>,
+        raft: Raft<'a, Record>,
         link: SwitchLink,
-        log: MemoryLog<u64>
+        log: MemoryLog<Record>
     }
 
     struct Switchboard<'a> {
@@ -333,7 +344,7 @@ mod tests {
                 let mut leader = switch.nodes.get(leader_id).unwrap().borrow_mut();
 
                 for i in 0..47 {
-                    let committed = leader.raft.propose(Box::new(i)).unwrap();
+                    let committed = leader.raft.propose(Box::new(Record(i))).unwrap();
                     assert!(committed >= final_index);
                     final_index = committed;
                 }
@@ -389,7 +400,7 @@ mod tests {
                         let count = random::<u64>() % 10;
                         info!("proposing {}", count);
                         for i in 0..count {
-                            let committed = leader.raft.propose(Box::new(i)).unwrap();
+                            let committed = leader.raft.propose(Box::new(Record(i))).unwrap();
                         }
                     }
 
@@ -431,12 +442,12 @@ mod tests {
     #[test]
     fn vote_granted () {
         let _ = env_logger::try_init();
-        let log: MemoryLog<u64> = MemoryLog::new();
+        let log: MemoryLog<Record> = MemoryLog::new();
         let link = NullLink::new();
         {
             let id = "me".to_owned();
             let cluster = single_node_cluster(&id);
-            let mut raft: Raft<u64> = Raft::new(cluster, &DEFAULT_CONFIG, Box::new(log.clone()), Box::new(link));
+            let mut raft: Raft<Record> = Raft::new(cluster, &DEFAULT_CONFIG, Box::new(log.clone()), Box::new(link));
             let response = raft.request_vote(RequestVote {
                 term: 0,
                 candidate_id: "george michael".to_string(),

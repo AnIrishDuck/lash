@@ -1,4 +1,4 @@
-use crate::Log;
+use crate::{Log, Unique};
 
 use std::cell::RefCell;
 use std::cmp::min;
@@ -34,7 +34,7 @@ impl<Record: Clone> MemoryLog<Record> {
     }
 }
 
-impl<Record: Clone + Debug> Log<Record> for MemoryLog<Record> {
+impl<Record: Clone + Debug + Unique> Log<Record> for MemoryLog<Record> {
     fn get_current_term (&self) -> u64 {
         self.state.borrow().term
     }

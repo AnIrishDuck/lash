@@ -27,13 +27,13 @@ impl<'a> State<'a> {
     }
 }
 
-pub fn become_candidate<'a, 'b, Record: Debug> (raft: &'a mut Raft<'b, Record>) {
+pub fn become_candidate<'a, 'b, Record: Debug + Unique> (raft: &'a mut Raft<'b, Record>) {
     info!("Becoming Candidate");
     raft.role = Role::Candidate;
     start_election(raft);
 }
 
-pub fn start_election<'a, 'b, Record: Debug> (raft: &'a mut Raft<'b, Record>) {
+pub fn start_election<'a, 'b, Record: Debug + Unique> (raft: &'a mut Raft<'b, Record>) {
     let term = raft.log.get_current_term() + 1;
     raft.log.set_current_term(term);
     trace!("starting new election, term {}", term);
@@ -66,7 +66,7 @@ pub fn start_election<'a, 'b, Record: Debug> (raft: &'a mut Raft<'b, Record>) {
     }).collect();
 }
 
-pub fn tick<'a, Record: Debug> (raft: &mut Raft<'a, Record>) {
+pub fn tick<'a, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
     let term = raft.log.get_current_term();
     let mut highest_term = 0;
 

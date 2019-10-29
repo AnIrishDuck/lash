@@ -15,8 +15,12 @@ mod candidate;
 mod leader;
 pub mod log;
 
+pub trait Unique {
+    fn id (&self) -> String;
+}
+
 /* prelude: definitions from page 4 of the raft paper */
-pub trait Log<Record> {
+pub trait Log<Record: Unique> {
     fn get_current_term (&self) -> u64;
     fn set_current_term (&mut self, term: u64);
 
@@ -113,7 +117,7 @@ pub static DEFAULT_CONFIG: Config = Config {
     election_restart_jitter: 5
 };
 
-pub struct Raft<'a, Record: 'a> {
+pub struct Raft<'a, Record: Unique + 'a> {
     config: &'a Config,
     pub cluster: Cluster<'a>,
     pub volatile_state: VolatileState<'a>,
@@ -122,7 +126,7 @@ pub struct Raft<'a, Record: 'a> {
     pub role: Role
 }
 
-impl<'a, Record: Debug + 'a> Raft<'a, Record> {
+impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
     pub fn new (cluster: Cluster<'a>, config: &'a Config, log: Box<Log<Record> + 'a>, link: Box<Link<Record> + 'a>) -> Self {
         let volatile = VolatileState {
             candidate: candidate::State::new(),
