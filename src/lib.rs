@@ -15,6 +15,8 @@ mod candidate;
 mod leader;
 pub mod log;
 
+/* (§8) all records must bear a unique identifier so the next leader can notify the client if their
+   proposal was committed when the prior leader failed after committing but before responding */
 pub trait Unique {
     fn id (&self) -> String;
 }
