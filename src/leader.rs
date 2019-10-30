@@ -131,6 +131,7 @@ pub fn tick<'a, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
                 );
 
                 let response = raft.link.append_entries(follower.id, AppendEntries {
+                    source: raft.cluster.id.clone(),
                     term: term,
                     previous_entry: prior_entry,
                     entries: records,

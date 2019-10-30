@@ -497,6 +497,7 @@ mod tests {
             let cluster = single_node_cluster(&id);
             let mut raft: Raft<Record> = Raft::new(cluster, &DEFAULT_CONFIG, Box::new(log.clone()), Box::new(link));
             let response = raft.request_vote(RequestVote {
+                source: "other".to_string(),
                 term: 0,
                 candidate_id: "george michael".to_string(),
                 last_log: LogEntry { term: 0, index: 5 }

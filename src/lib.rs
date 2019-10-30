@@ -71,6 +71,7 @@ pub struct LogEntry {
 
 #[derive(Debug, Clone)]
 pub struct AppendEntries<Record> {
+    source: String,
     term: u64,
     // we never ended up needing leader_id
     // we deviate from the spec here for clarity: there might be no prior entry
@@ -90,6 +91,7 @@ pub type AppendResponse = Future<Item=Append, Error=String>;
 
 #[derive(Debug, Clone)]
 pub struct RequestVote {
+    pub source: String,
     pub term: u64,
     pub candidate_id: String,
     pub last_log: LogEntry
