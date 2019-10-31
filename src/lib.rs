@@ -51,6 +51,7 @@ pub struct VolatileState<'a> {
     // note: we stray slightly from the spec here. a "commit index" might not
     // exist in the startup state where no values have been proposed.
     pub commit_count: Rc<u64>,
+    pub current_leader: Option<String>,
     // we will track last_applied in the state machine
     candidate: candidate::State<'a>,
     leader: leader::State<'a>,
@@ -71,7 +72,6 @@ pub struct LogEntry {
 
 #[derive(Debug, Clone)]
 pub struct AppendEntries<Record> {
-    source: String,
     term: u64,
     // we never ended up needing leader_id
     // we deviate from the spec here for clarity: there might be no prior entry
@@ -91,7 +91,6 @@ pub type AppendResponse = Future<Item=Append, Error=String>;
 
 #[derive(Debug, Clone)]
 pub struct RequestVote {
-    pub source: String,
     pub term: u64,
     pub candidate_id: String,
     pub last_log: LogEntry
@@ -138,6 +137,7 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
         let volatile = VolatileState {
             candidate: candidate::State::new(),
             commit_count: Rc::new(0),
+            current_leader: None,
             follower: follower::State::new(),
             leader: leader::State::new()
         };
@@ -178,7 +178,7 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
         }
     }
 
-    pub fn append_entries (&mut self, request: AppendEntries<Record>) -> Append {
+    pub fn append_entries (&mut self, source: String, request: AppendEntries<Record>) -> Append {
         let current_term = self.check_term(request.term, true);
         let count = request.entries.len() as u64;
         debug!(
@@ -188,7 +188,10 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
         );
 
         let success = match self.role {
-            Role::Follower => follower::append_entries(self, request),
+            Role::Follower => {
+                self.volatile_state.current_leader = Some(source);
+                follower::append_entries(self, request)
+            },
             _ => false
         };
         let response = Append { term: current_term, success: success };

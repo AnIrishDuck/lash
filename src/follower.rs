@@ -111,8 +111,7 @@ mod tests {
         {
             let mut raft: Raft<u64> = Raft::new(cluster, &DEFAULT_CONFIG, Box::new(log.clone()), Box::new(link));
 
-            let response = raft.append_entries(AppendEntries {
-                source: "leader".to_string(),
+            let response = raft.append_entries("leader".to_string(), AppendEntries {
                 term: 0,
                 previous_entry: None,
                 entries: boxed(vec![(0, 1), (0, 2), (0, 3)]),
@@ -129,8 +128,7 @@ mod tests {
     fn fill_term (raft: &mut Raft<u64>, term: u64, prior: Option<LogEntry>, count: u64) {
         let mut fill = Vec::new();
         fill.resize(count as usize, (term, 0));
-        let response = raft.append_entries(AppendEntries {
-            source: "leader".to_string(),
+        let response = raft.append_entries("leader".to_string(), AppendEntries {
             term: term,
             previous_entry: prior,
             entries: boxed(fill),
@@ -149,8 +147,7 @@ mod tests {
         {
             let mut raft: Raft<u64> = Raft::new(cluster, &DEFAULT_CONFIG, Box::new(log.clone()), Box::new(link));
 
-            let response = raft.append_entries(AppendEntries {
-                source: "leader".to_string(),
+            let response = raft.append_entries("leader".to_string(), AppendEntries {
                 term: 0,
                 previous_entry: Some(LogEntry { term: 0, index: 5 }),
                 entries: boxed(vec![(0, 1),(0, 2),(0, 3)]),
@@ -165,8 +162,7 @@ mod tests {
 
             // per the protocol, a new leader initially would attempt to append
             // results from term 6
-            let response = raft.append_entries(AppendEntries {
-                source: "leader".to_string(),
+            let response = raft.append_entries("leader".to_string(), AppendEntries {
                 term: 8,
                 previous_entry: Some(LogEntry { term: 5, index: 6 }),
                 entries: boxed(vec![(6, 1),(6, 2),(6, 3)]),
@@ -176,8 +172,7 @@ mod tests {
 
             // the leader would then iterate backwards until finding the index
             // where the logs are consistent
-            let response = raft.append_entries(AppendEntries {
-                source: "leader".to_string(),
+            let response = raft.append_entries("leader".to_string(), AppendEntries {
                 term: 8,
                 previous_entry: Some(LogEntry { term: 1, index: 2 }),
                 entries: boxed(vec![(4, 1), (4, 2)]),

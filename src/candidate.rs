@@ -29,6 +29,7 @@ impl<'a> State<'a> {
 
 pub fn become_candidate<'a, 'b, Record: Debug + Unique> (raft: &'a mut Raft<'b, Record>) {
     info!("Becoming Candidate");
+    raft.volatile_state.current_leader = None;
     raft.role = Role::Candidate;
     start_election(raft);
 }
@@ -57,7 +58,6 @@ pub fn start_election<'a, 'b, Record: Debug + Unique> (raft: &'a mut Raft<'b, Re
 
     election.pending = cluster.peers.iter().map(|id| {
         let response: Box<VoteResponse> = link.request_vote(id, RequestVote {
-            source: cluster.id.clone(),
             candidate_id: cluster.id.to_string(),
             last_log: last_log.clone().unwrap_or(LogEntry { term: 0, index: 0 }),
             term: term
