@@ -4,12 +4,16 @@ extern crate rand;
 extern crate tokio;
 extern crate futures;
 
-use logging::{debug, trace};
+use logging::{debug, error, trace};
 
+use tokio::prelude::Async;
 use futures::{future, Future};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
+use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
+use std::cell::Cell;
+use std::collections::BTreeMap;
 use std::cmp::min;
-use std::fmt::{Debug};
+use std::fmt::Debug;
 
 mod follower;
 mod candidate;
@@ -50,7 +54,8 @@ pub fn count_to_index(count: u64) -> Option<u64> {
 pub struct VolatileState<'a> {
     // note: we stray slightly from the spec here. a "commit index" might not
     // exist in the startup state where no values have been proposed.
-    pub commit_count: Rc<u64>,
+    pub commit_count: Rc<Cell<u64>>,
+    pub pending: BTreeMap<u64, Sender<bool>>,
     pub current_leader: Option<String>,
     // we will track last_applied in the state machine
     candidate: candidate::State<'a>,
@@ -136,10 +141,11 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
     pub fn new (cluster: Cluster<'a>, config: &'a Config, log: Box<Log<Record> + 'a>, link: Box<Link<Record> + 'a>) -> Self {
         let volatile = VolatileState {
             candidate: candidate::State::new(),
-            commit_count: Rc::new(0),
+            commit_count: Rc::new(Cell::new(0)),
             current_leader: None,
             follower: follower::State::new(),
-            leader: leader::State::new()
+            leader: leader::State::new(),
+            pending: BTreeMap::new()
         };
 
         Raft {
@@ -237,7 +243,7 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
         response
     }
 
-    pub fn propose (&mut self, r: Box<Record>) -> Option<u64> {
+    pub fn get_propose_index (&mut self, r: Box<Record>) -> Option<u64> {
         match self.role {
             Role::Leader => {
                 Some(
@@ -254,6 +260,26 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
         }
     }
 
+    pub fn propose (&mut self, r: Box<Record>) -> FutureProgress {
+        let proposal_valid = self.get_propose_index(r);
+        let (send, recv) = channel();
+
+        match proposal_valid {
+            Some(ix) => {
+                if ix < self.volatile_state.commit_count.get() { send.send(true).unwrap() }
+                else {
+                    self.volatile_state.pending.insert(ix, send);
+                }
+            },
+            None => { send.send(false).unwrap() }
+        }
+
+        FutureProgress {
+            valid: recv,
+            ix: proposal_valid
+        }
+    }
+
     fn get_last_log_entry<'b> (&'b mut self) -> Option<LogEntry> {
         let final_index = count_to_index(self.log.get_count());
         final_index.and_then(|index| {
@@ -264,14 +290,50 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
     }
 
     pub fn tick (&mut self) {
+        let prior_commit = { self.volatile_state.commit_count.get() };
         match self.role {
             Role::Follower => follower::tick(self),
             Role::Candidate => candidate::tick(self),
             Role::Leader => leader::tick(self)
         }
+
+        let current_commit = { self.volatile_state.commit_count.get() };
+        for ix in prior_commit..current_commit {
+            let rm = match self.volatile_state.pending.get(&ix) {
+                Some(channel) => { channel.send(true); true },
+                None => false
+            };
+
+            if rm { self.volatile_state.pending.remove(&ix); }
+        }
     }
 }
 
+pub struct FutureProgress {
+    valid: Receiver<bool>,
+    ix: Option<u64>
+}
+
+impl Future for FutureProgress
+{
+    type Item = u64;
+    type Error = String;
+
+    fn poll (&mut self) -> Result<Async<u64>, String> {
+        match self.valid.try_recv() {
+            Ok(valid) => {
+                // error!("... {}", self.commit_count.get());
+                if valid {
+                    Ok(Async::Ready(self.ix.unwrap()))
+                } else {
+                    Err("cluster change".to_string())
+                }
+            },
+            Err(TryRecvError::Empty) => Ok(Async::NotReady),
+            Err(TryRecvError::Disconnected) => Err("raft destroyed".to_string())
+        }
+    }
+}
 
 pub struct NullLink {}
 

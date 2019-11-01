@@ -344,7 +344,7 @@ mod tests {
                 let mut leader = switch.nodes.get(leader_id).unwrap().borrow_mut();
 
                 for i in 0..47 {
-                    let committed = leader.raft.propose(Box::new(Record(i))).unwrap();
+                    let committed = leader.raft.get_propose_index(Box::new(Record(i))).unwrap();
                     assert!(committed >= final_index);
                     final_index = committed;
                 }
@@ -363,7 +363,7 @@ mod tests {
                 let node = cell.borrow();
                 let log = node.log.record_vec();
                 assert_eq!(leader_log, log);
-                assert_eq!(*node.raft.volatile_state.commit_count, final_index + 1);
+                assert_eq!(node.raft.volatile_state.commit_count.get(), final_index + 1);
             }
         }
     }
@@ -390,8 +390,8 @@ mod tests {
                 let mut leader = switch.nodes.get(leader_id).unwrap().borrow_mut();
 
                 for i in 0..47 {
-                    let committed = leader.raft.propose(Box::new(Record(i))).unwrap();
-                    let other = leader.raft.propose(Box::new(Record(i))).unwrap();
+                    let committed = leader.raft.get_propose_index(Box::new(Record(i))).unwrap();
+                    let other = leader.raft.get_propose_index(Box::new(Record(i))).unwrap();
                     assert!(committed >= final_index);
                     assert!(committed == other);
                     final_index = committed;
@@ -411,7 +411,7 @@ mod tests {
                 let node = cell.borrow();
                 let log = node.log.record_vec();
                 assert_eq!(leader_log, log);
-                assert_eq!(*node.raft.volatile_state.commit_count, final_index + 1);
+                assert_eq!(node.raft.volatile_state.commit_count.get(), final_index + 1);
             }
         }
     }
@@ -433,6 +433,7 @@ mod tests {
                 switch.process_all_messages();
             }
 
+            let mut futures: Vec<FutureProgress> = vec![];
             let mut flake = a.clone();
             let mut final_index = 0;
             for tick in 0..1000 {
@@ -446,13 +447,14 @@ mod tests {
 
                     if tick % 100 == 42 {
                         let count = random::<u64>() % 10;
-                        info!("proposing {}", count);
                         for i in 0..count {
-                            let committed = leader.raft.propose(Box::new(Record(i))).unwrap();
+                            let proposal = tick * 1000 + i;
+                            info!("proposing {}", proposal);
+                            futures.push(leader.raft.propose(Box::new(Record(proposal))));
                         }
                     }
 
-                    let official = *leader.raft.volatile_state.commit_count;
+                    let official = leader.raft.volatile_state.commit_count.get();
                     trace!("official {} prior {}", official, final_index);
                     final_index = official;
                 }
@@ -471,6 +473,16 @@ mod tests {
                 switch.tick();
                 switch.process_all_messages();
             }
+
+            info!("futures {}", futures.len());
+            let mut ready = vec![];
+            for f in futures.iter_mut() {
+                match f.poll() {
+                    Ok(Async::Ready(_)) => ready.push(1),
+                    _ => ()
+                }
+            }
+            info!("ready {}", ready.len());
 
             let leader_log = {
                 let leader_id = switch.leader().unwrap();

@@ -58,10 +58,10 @@ pub fn append_entries<Record: Unique> (raft: &mut Raft<Record>, request: AppendE
 
         let leader_count = request.leader_commit;
         {
-            let commit_count = Rc::get_mut(&mut raft.volatile_state.commit_count).unwrap();
-            if leader_count > *commit_count {
+            let commit_count = &raft.volatile_state.commit_count;
+            if leader_count > commit_count.get() {
                 let min_count = min(leader_count, my_count);
-                *commit_count = min_count;
+                commit_count.set(min_count);
                 trace!(
                     "Leader commit count {}, my commit count: {}",
                     leader_count,
@@ -120,7 +120,7 @@ mod tests {
 
             assert_eq!(response.term, 0);
             assert_eq!(response.success, true);
-            assert_eq!(*raft.volatile_state.commit_count, 3);
+            assert_eq!(raft.volatile_state.commit_count.get(), 3);
         }
         assert_eq!(log.record_vec(), vec![(0, 1), (0, 2), (0, 3)]);
     }
