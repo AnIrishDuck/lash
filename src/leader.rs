@@ -27,7 +27,7 @@ impl<'a> State<'a> {
 }
 
 pub fn become_leader<'a, Record: Unique> (raft: &mut Raft<'a, Record>) {
-    let count = raft.volatile_state.commit_count.get();
+    let count = raft.volatile_state.commit_count;
     info!("Becoming Leader with consensus commit count {}", count);
     raft.role = Role::Leader;
 
@@ -134,7 +134,7 @@ pub fn tick<'a, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
                     term: term,
                     previous_entry: prior_entry,
                     entries: records,
-                    leader_commit: raft.volatile_state.commit_count.get()
+                    leader_commit: raft.volatile_state.commit_count
                 });
 
                 follower.pending = Some(response);
@@ -158,11 +158,11 @@ pub fn tick<'a, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
         matches.sort_unstable();
 
         let ref commit_count = raft.volatile_state.commit_count;
-        let commit = commit_count.get();
+        let commit = *commit_count;
         let middle = matches.len() / 2;
         let next_commit = max(matches[middle], commit);
 
         trace!("log counts: {:?}; consensus count: {}", matches, commit);
-        commit_count.set(next_commit);
+        raft.volatile_state.commit_count = next_commit;
     }
 }

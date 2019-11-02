@@ -54,7 +54,7 @@ pub fn count_to_index(count: u64) -> Option<u64> {
 pub struct VolatileState<'a> {
     // note: we stray slightly from the spec here. a "commit index" might not
     // exist in the startup state where no values have been proposed.
-    pub commit_count: Rc<Cell<u64>>,
+    pub commit_count: u64,
     pub pending: BTreeMap<u64, Sender<bool>>,
     pub current_leader: Option<String>,
     // we will track last_applied in the state machine
@@ -141,7 +141,7 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
     pub fn new (cluster: Cluster<'a>, config: &'a Config, log: Box<Log<Record> + 'a>, link: Box<Link<Record> + 'a>) -> Self {
         let volatile = VolatileState {
             candidate: candidate::State::new(),
-            commit_count: Rc::new(Cell::new(0)),
+            commit_count: 0,
             current_leader: None,
             follower: follower::State::new(),
             leader: leader::State::new(),
@@ -266,7 +266,7 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
 
         match proposal_valid {
             Some(ix) => {
-                if ix < self.volatile_state.commit_count.get() { send.send(true).unwrap() }
+                if ix < self.volatile_state.commit_count { send.send(true).unwrap() }
                 else {
                     self.volatile_state.pending.insert(ix, send);
                 }
@@ -290,14 +290,14 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
     }
 
     pub fn tick (&mut self) {
-        let prior_commit = { self.volatile_state.commit_count.get() };
+        let prior_commit = { self.volatile_state.commit_count };
         match self.role {
             Role::Follower => follower::tick(self),
             Role::Candidate => candidate::tick(self),
             Role::Leader => leader::tick(self)
         }
 
-        let current_commit = { self.volatile_state.commit_count.get() };
+        let current_commit = { self.volatile_state.commit_count };
         for ix in prior_commit..current_commit {
             let rm = match self.volatile_state.pending.get(&ix) {
                 Some(channel) => { channel.send(true); true },
@@ -322,7 +322,6 @@ impl Future for FutureProgress
     fn poll (&mut self) -> Result<Async<u64>, String> {
         match self.valid.try_recv() {
             Ok(valid) => {
-                // error!("... {}", self.commit_count.get());
                 if valid {
                     Ok(Async::Ready(self.ix.unwrap()))
                 } else {
