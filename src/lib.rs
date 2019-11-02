@@ -8,9 +8,7 @@ use logging::{debug, error, trace};
 
 use tokio::prelude::Async;
 use futures::{future, Future};
-use std::rc::{Rc, Weak};
 use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
-use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::cmp::min;
 use std::fmt::Debug;
@@ -20,8 +18,12 @@ mod candidate;
 mod leader;
 pub mod log;
 
-/* (§8) all records must bear a unique identifier so the next leader can notify the client if their
-   proposal was committed when the prior leader failed after committing but before responding */
+/* (§8) all records must bear a unique identifier, to handle the following case:
+ *  - leader receives request from client
+ *  - leader commits request and persists to cluster with AppendEntries
+ *  - leader fails before returning success to client
+ *  - client retries with new leader that already has proposal
+ */
 pub trait Unique {
     fn id (&self) -> String;
 }
