@@ -433,7 +433,7 @@ mod tests {
                 switch.process_all_messages();
             }
 
-            let mut futures: Vec<FutureProgress> = vec![];
+            let mut futures: Vec<(u64, FutureProgress)> = vec![];
             let mut flake = a.clone();
             let mut final_index = 0;
             for tick in 0..1000 {
@@ -449,8 +449,9 @@ mod tests {
                         let count = random::<u64>() % 10;
                         for i in 0..count {
                             let proposal = tick * 1000 + i;
-                            info!("proposing {}", proposal);
-                            futures.push(leader.raft.propose(Box::new(Record(proposal))));
+                            trace!("proposing {}", proposal);
+                            let future = leader.raft.propose(Box::new(Record(proposal)));
+                            futures.push((proposal, future));
                         }
                     }
 
@@ -475,14 +476,21 @@ mod tests {
             }
 
             info!("futures {}", futures.len());
-            let mut ready = vec![];
-            for f in futures.iter_mut() {
-                match f.poll() {
-                    Ok(Async::Ready(_)) => ready.push(1),
-                    _ => ()
+            {
+                let mut committed = 0;
+                let leader_id = switch.leader().unwrap();
+                let leader = switch.nodes.get(leader_id).unwrap().borrow_mut();
+                for (proposal, f) in futures.iter_mut() {
+                    match f.poll() {
+                        Ok(Async::Ready(_)) => {
+                            committed += 1;
+                            assert!(leader.log.lookup_id(&proposal.to_string()).is_some());
+                        },
+                        _ => ()
+                    }
                 }
+                info!("committed {}", committed);
             }
-            info!("ready {}", ready.len());
 
             let leader_log = {
                 let leader_id = switch.leader().unwrap();
