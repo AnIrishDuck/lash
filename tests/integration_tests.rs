@@ -486,6 +486,9 @@ mod tests {
                             committed += 1;
                             assert!(leader.log.lookup_id(&proposal.to_string()).is_some());
                         },
+                        Ok(Async::NotReady) => {
+                            panic!("all futures should be resolved!");
+                        },
                         _ => ()
                     }
                 }

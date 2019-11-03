@@ -178,6 +178,11 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
                 trace!("lost election for term {}", message_term);
             }
 
+            for (_, send) in self.volatile_state.pending.iter() {
+                send.send(false);
+            }
+            self.volatile_state.pending = BTreeMap::new();
+
             self.log.set_current_term(message_term);
             follower::become_follower(self);
             message_term
