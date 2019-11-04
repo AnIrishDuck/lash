@@ -31,7 +31,7 @@ pub fn become_leader<'a, Record: Unique> (raft: &mut Raft<'a, Record>) {
     info!("Becoming Leader with consensus commit count {}", count);
     raft.role = Role::Leader;
 
-    let followers = raft.cluster.peers.iter().map(|id| {
+    let followers = raft.cluster.new.peers.iter().map(|id| {
         Follower {
             id: id,
             sent: 0,

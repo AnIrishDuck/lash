@@ -72,6 +72,12 @@ pub struct Cluster<'a> {
 }
 
 #[derive(Debug, Clone)]
+pub struct ClusterConfig<'a> {
+    pub old: Option<Cluster<'a>>,
+    pub new: Cluster<'a>
+}
+
+#[derive(Debug, Clone)]
 pub struct LogEntry {
     pub index: u64,
     pub term: u64
@@ -132,7 +138,7 @@ pub static DEFAULT_CONFIG: Config = Config {
 
 pub struct Raft<'a, Record: Unique + 'a> {
     config: &'a Config,
-    pub cluster: Cluster<'a>,
+    pub cluster: ClusterConfig<'a>,
     pub volatile_state: VolatileState<'a>,
     log: Box<Log<Record> + 'a>,
     link: Box<Link<Record> + 'a>,
@@ -152,7 +158,7 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
 
         Raft {
             config: config,
-            cluster: cluster,
+            cluster: ClusterConfig { old: None, new: cluster },
             link: link,
             log: log,
             role: Role::Follower,

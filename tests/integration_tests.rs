@@ -235,7 +235,7 @@ mod tests {
             self.nodes.values().flat_map(|n| {
                 let ref raft = n.borrow().raft;
                 if raft.role == Role::Leader {
-                    let x: &'a String = raft.cluster.id;
+                    let x: &'a String = raft.cluster.new.id;
                     Some(x)
                 } else {
                     None

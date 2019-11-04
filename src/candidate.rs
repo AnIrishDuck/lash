@@ -42,7 +42,7 @@ pub fn start_election<'a, 'b, Record: Debug + Unique> (raft: &'a mut Raft<'b, Re
     let last_log = raft.get_last_log_entry();
 
     let ref mut state = raft.volatile_state;
-    let ref cluster = raft.cluster;
+    let ref cluster = raft.cluster.new;
 
     let ref config = raft.config;
     let ref mut election = state.candidate;
@@ -93,7 +93,7 @@ pub fn tick<'a, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
         }
 
         let votes_received = election.votes.len();
-        let quorum = (raft.cluster.peers.len() / 2) + 1;
+        let quorum = (raft.cluster.new.peers.len() / 2) + 1;
         trace!(
             "current votes received: {}, quorum: {}, ticks left: {}",
             votes_received,
