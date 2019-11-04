@@ -109,7 +109,7 @@ mod tests {
         let log: MemoryLog<u64> = MemoryLog::new();
         let link: NullLink = NullLink::new();
         {
-            let mut raft: Raft<u64> = Raft::new(cluster, &DEFAULT_CONFIG, Box::new(log.clone()), Box::new(link));
+            let mut raft: Raft<u64> = Raft::new(cluster, DEFAULT_CONFIG.clone(), Box::new(log.clone()), Box::new(link));
 
             let response = raft.append_entries("leader".to_string(), AppendEntries {
                 term: 0,
@@ -145,7 +145,7 @@ mod tests {
         let log: MemoryLog<u64> = MemoryLog::new();
         let link: NullLink = NullLink::new();
         {
-            let mut raft: Raft<u64> = Raft::new(cluster, &DEFAULT_CONFIG, Box::new(log.clone()), Box::new(link));
+            let mut raft: Raft<u64> = Raft::new(cluster, DEFAULT_CONFIG.clone(), Box::new(log.clone()), Box::new(link));
 
             let response = raft.append_entries("leader".to_string(), AppendEntries {
                 term: 0,

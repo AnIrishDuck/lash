@@ -129,7 +129,7 @@ mod tests {
                 let link = SwitchLink::new(&id);
                 let raft = Raft::new(
                     cluster,
-                    &DEFAULT_CONFIG,
+                    DEFAULT_CONFIG.clone(),
                     Box::new(log.clone()),
                     Box::new(link.clone())
                 );
@@ -518,7 +518,7 @@ mod tests {
         {
             let id = "me".to_owned();
             let cluster = single_node_cluster(&id);
-            let mut raft: Raft<Record> = Raft::new(cluster, &DEFAULT_CONFIG, Box::new(log.clone()), Box::new(link));
+            let mut raft: Raft<Record> = Raft::new(cluster, DEFAULT_CONFIG.clone(), Box::new(log.clone()), Box::new(link));
             let response = raft.request_vote(RequestVote {
                 term: 0,
                 candidate_id: "george michael".to_string(),

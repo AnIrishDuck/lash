@@ -126,6 +126,7 @@ pub trait Link<Record> {
 #[derive(PartialEq, Clone)]
 pub enum Role { Follower, Candidate, Leader }
 
+#[derive(Clone)]
 pub struct Config {
     election_restart_ticks: usize,
     election_restart_jitter: usize
@@ -137,7 +138,7 @@ pub static DEFAULT_CONFIG: Config = Config {
 };
 
 pub struct Raft<'a, Record: Unique + 'a> {
-    config: &'a Config,
+    config: Config,
     pub cluster: ClusterConfig<'a>,
     pub volatile_state: VolatileState<'a>,
     log: Box<Log<Record> + 'a>,
@@ -146,7 +147,7 @@ pub struct Raft<'a, Record: Unique + 'a> {
 }
 
 impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
-    pub fn new (cluster: Cluster<'a>, config: &'a Config, log: Box<Log<Record> + 'a>, link: Box<Link<Record> + 'a>) -> Self {
+    pub fn new (cluster: Cluster<'a>, config: Config, log: Box<Log<Record> + 'a>, link: Box<Link<Record> + 'a>) -> Self {
         let volatile = VolatileState {
             candidate: candidate::State::new(),
             commit_count: 0,
