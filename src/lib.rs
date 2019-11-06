@@ -53,28 +53,28 @@ pub fn count_to_index(count: u64) -> Option<u64> {
     if count > 0 { Some(count - 1) } else { None }
 }
 
-pub struct VolatileState<'a> {
+pub struct VolatileState {
     // note: we stray slightly from the spec here. a "commit index" might not
     // exist in the startup state where no values have been proposed.
     pub commit_count: u64,
     pub pending: BTreeMap<u64, Sender<bool>>,
     pub current_leader: Option<String>,
     // we will track last_applied in the state machine
-    candidate: candidate::State<'a>,
-    leader: leader::State<'a>,
+    candidate: candidate::State,
+    leader: leader::State,
     follower: follower::State
 }
 
 #[derive(Debug, Clone)]
-pub struct Cluster<'a> {
-    pub id: &'a String,
-    pub peers: Vec<&'a String>
+pub struct Cluster {
+    pub id: String,
+    pub peers: Vec<String>
 }
 
 #[derive(Debug, Clone)]
-pub struct ClusterConfig<'a> {
-    pub old: Option<Cluster<'a>>,
-    pub new: Cluster<'a>
+pub struct ClusterConfig {
+    pub old: Option<Cluster>,
+    pub new: Cluster
 }
 
 #[derive(Debug, Clone)]
@@ -139,15 +139,15 @@ pub static DEFAULT_CONFIG: Config = Config {
 
 pub struct Raft<'a, Record: Unique + 'a> {
     config: Config,
-    pub cluster: ClusterConfig<'a>,
-    pub volatile_state: VolatileState<'a>,
+    pub cluster: ClusterConfig,
+    pub volatile_state: VolatileState,
     log: Box<Log<Record> + 'a>,
     link: Box<Link<Record> + 'a>,
     pub role: Role
 }
 
 impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
-    pub fn new (cluster: Cluster<'a>, config: Config, log: Box<Log<Record> + 'a>, link: Box<Link<Record> + 'a>) -> Self {
+    pub fn new (cluster: Cluster, config: Config, log: Box<Log<Record> + 'a>, link: Box<Link<Record> + 'a>) -> Self {
         let volatile = VolatileState {
             candidate: candidate::State::new(),
             commit_count: 0,

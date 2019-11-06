@@ -114,15 +114,15 @@ mod tests {
         tick: RefCell<u64>
     }
 
-    fn others<'a> (id: &'a String, ids: &Vec<&'a String>) -> Vec<&'a String> {
-        ids.iter().filter(|peer_id| **peer_id != id).map(|i| i.clone()).collect()
+    fn others<'a> (id: &'a String, ids: &Vec<&'a String>) -> Vec<String> {
+        ids.iter().filter(|peer_id| **peer_id != id).map(|i| (*i).clone()).collect()
     }
 
     impl<'a> Switchboard<'a> {
         fn new (ids: Vec<&'a String>) -> Self {
             let nodes: HashMap<String, RefCell<Node<'a>>> = ids.iter().map(|id| {
-                let cluster: Cluster<'a> = Cluster {
-                    id: id,
+                let cluster: Cluster = Cluster {
+                    id: (*id).clone(),
                     peers: others(id, &ids)
                 };
                 let log = MemoryLog::new();
@@ -167,7 +167,7 @@ mod tests {
             let leaders = self.leaders();
             let leader_count = leaders.len();
             let term_set: HashSet<_> = leaders.into_iter().map(|id|
-                self.nodes.get(id).unwrap().borrow().log.get_current_term()
+                self.nodes.get(&id).unwrap().borrow().log.get_current_term()
             ).collect();
             assert!(term_set.len() == leader_count);
         }
@@ -231,28 +231,27 @@ mod tests {
             }
         }
 
-        fn leaders (&self) -> Vec<&'a String> {
+        fn leaders (&self) -> Vec<String> {
             self.nodes.values().flat_map(|n| {
                 let ref raft = n.borrow().raft;
                 if raft.role == Role::Leader {
-                    let x: &'a String = raft.cluster.new.id;
-                    Some(x)
+                    Some(raft.cluster.new.id.clone())
                 } else {
                     None
                 }
             }).collect()
         }
 
-        fn leader (&self) -> Option<&'a String> {
-            self.leaders().get(0).map(|id| *id)
+        fn leader (&self) -> Option<String> {
+            self.leaders().get(0).map(|v| (*v).clone())
         }
     }
 
 
-    fn single_node_cluster<'a> (id: &'a String) -> Cluster<'a> {
+    fn single_node_cluster<'a> (id: &'a String) -> Cluster {
         Cluster {
-            id: &id,
-            peers: vec![&id]
+            id: id.clone(),
+            peers: vec![id.clone()]
         }
     }
 
@@ -341,7 +340,7 @@ mod tests {
             let mut final_index = 0;
             let leader_log = {
                 let leader_id = switch.leader().unwrap();
-                let mut leader = switch.nodes.get(leader_id).unwrap().borrow_mut();
+                let mut leader = switch.nodes.get(&leader_id).unwrap().borrow_mut();
 
                 for i in 0..47 {
                     let committed = leader.raft.get_propose_index(Box::new(Record(i))).unwrap();
@@ -387,7 +386,7 @@ mod tests {
             let mut final_index = 0;
             let leader_log = {
                 let leader_id = switch.leader().unwrap();
-                let mut leader = switch.nodes.get(leader_id).unwrap().borrow_mut();
+                let mut leader = switch.nodes.get(&leader_id).unwrap().borrow_mut();
 
                 for i in 0..47 {
                     let committed = leader.raft.get_propose_index(Box::new(Record(i))).unwrap();
@@ -479,7 +478,7 @@ mod tests {
             {
                 let mut committed = 0;
                 let leader_id = switch.leader().unwrap();
-                let leader = switch.nodes.get(leader_id).unwrap().borrow_mut();
+                let leader = switch.nodes.get(&leader_id).unwrap().borrow_mut();
                 for (proposal, f) in futures.iter_mut() {
                     match f.poll() {
                         Ok(Async::Ready(_)) => {
@@ -497,7 +496,7 @@ mod tests {
 
             let leader_log = {
                 let leader_id = switch.leader().unwrap();
-                let mut leader = switch.nodes.get(leader_id).unwrap().borrow_mut();
+                let mut leader = switch.nodes.get(&leader_id).unwrap().borrow_mut();
 
                 leader.log.record_vec()
             };

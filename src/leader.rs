@@ -4,8 +4,8 @@ use logging::{error, info, trace};
 use std::cmp::max;
 use tokio::prelude::*;
 
-struct Follower<'a> {
-    id: &'a String,
+struct Follower {
+    id: String,
     sent: usize,
     next_index: u64,
     // note: we stray slightly from the spec here. a "match index" might not
@@ -14,11 +14,11 @@ struct Follower<'a> {
     pending: Option<Box<AppendResponse>>
 }
 
-pub struct State<'a> {
-    followers: Vec<Follower<'a>>
+pub struct State {
+    followers: Vec<Follower>
 }
 
-impl<'a> State<'a> {
+impl State {
     pub fn new () -> Self {
         State {
             followers: vec![]
@@ -33,7 +33,7 @@ pub fn become_leader<'a, Record: Unique> (raft: &mut Raft<'a, Record>) {
 
     let followers = raft.cluster.new.peers.iter().map(|id| {
         Follower {
-            id: id,
+            id: id.clone(),
             sent: 0,
             next_index: count,
             match_count: 0,
@@ -130,7 +130,7 @@ pub fn tick<'a, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
                     follower.next_index
                 );
 
-                let response = raft.link.append_entries(follower.id, AppendEntries {
+                let response = raft.link.append_entries(&follower.id, AppendEntries {
                     term: term,
                     previous_entry: prior_entry,
                     entries: records,

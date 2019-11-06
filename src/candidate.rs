@@ -6,18 +6,18 @@ use std::cmp::max;
 use rand::prelude::*;
 use tokio::prelude::*;
 
-struct Pending<'a> {
-    id: &'a String,
+struct Pending {
+    id: String,
     response: Box<VoteResponse>
 }
 
-pub struct State<'a> {
-    votes: HashSet<&'a String>,
+pub struct State {
+    votes: HashSet<String>,
     ticks: usize,
-    pending: Vec<Pending<'a>>
+    pending: Vec<Pending>
 }
 
-impl<'a> State<'a> {
+impl State {
     pub fn new () -> Self {
         State {
             votes: HashSet::new(),
@@ -27,14 +27,14 @@ impl<'a> State<'a> {
     }
 }
 
-pub fn become_candidate<'a, 'b, Record: Debug + Unique> (raft: &'a mut Raft<'b, Record>) {
+pub fn become_candidate<'a, 'b, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
     info!("Becoming Candidate");
     raft.volatile_state.current_leader = None;
     raft.role = Role::Candidate;
     start_election(raft);
 }
 
-pub fn start_election<'a, 'b, Record: Debug + Unique> (raft: &'a mut Raft<'b, Record>) {
+pub fn start_election<'a, 'b, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
     let term = raft.log.get_current_term() + 1;
     raft.log.set_current_term(term);
     trace!("starting new election, term {}", term);
@@ -49,10 +49,10 @@ pub fn start_election<'a, 'b, Record: Debug + Unique> (raft: &'a mut Raft<'b, Re
     let jitter = random::<usize>() % config.election_restart_jitter;
     election.ticks = config.election_restart_ticks + jitter;
 
-    let ref mut v: HashSet<&'b String> = election.votes;
+    let ref mut v: HashSet<String> = election.votes;
     *v = HashSet::new();
-    v.insert(&cluster.id);
-    raft.log.set_voted_for(Some(cluster.id.to_string()));
+    v.insert(cluster.id.clone());
+    raft.log.set_voted_for(Some(cluster.id.clone()));
 
     let link = &raft.link;
 
@@ -63,7 +63,7 @@ pub fn start_election<'a, 'b, Record: Debug + Unique> (raft: &'a mut Raft<'b, Re
             term: term
         });
 
-        Pending { id: id, response: response }
+        Pending { id: id.clone(), response: response }
     }).collect();
 }
 
@@ -78,13 +78,13 @@ pub fn tick<'a, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
         election.ticks -= 1;
 
         for p in &mut election.pending {
-            let id = p.id;
+            let id = p.id.clone();
             match p.response.poll() {
                 Ok(Async::Ready(message)) => {
                     highest_term = max(highest_term, message.term);
                     trace!("response: {:?}", message);
                     if message.vote_granted {
-                        election.votes.insert(&id);
+                        election.votes.insert(id.clone());
                     }
                 }
                 Err(message) => error!("RequestVote error: {}", message),

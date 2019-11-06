@@ -84,10 +84,10 @@ mod tests {
     extern crate env_logger;
 
 
-    fn single_node_cluster<'a> (id: &'a String) -> Cluster<'a> {
+    fn single_node_cluster<'a> (id: &'a String) -> Cluster {
         Cluster {
-            id: &id,
-            peers: vec![&id]
+            id: id.clone(),
+            peers: vec![id.clone()]
         }
     }
 
