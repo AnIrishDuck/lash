@@ -119,11 +119,15 @@ mod tests {
     }
 
     impl<'a> Switchboard<'a> {
-        fn new (ids: Vec<&'a String>) -> Self {
+        fn new (peer_ids: Vec<&String>, learner_ids: Vec<&String>) -> Self {
+            let ids: Vec<&String> = peer_ids.clone().into_iter()
+                                            .chain(learner_ids.clone().into_iter()).collect();
             let nodes: HashMap<String, RefCell<Node<'a>>> = ids.iter().map(|id| {
                 let cluster: Cluster = Cluster {
                     id: (*id).clone(),
-                    peers: others(id, &ids)
+                    learning: learner_ids.iter().find(|l| *l == id).is_some(),
+                    peers: others(id, &peer_ids),
+                    learners: others(id, &learner_ids)
                 };
                 let log = MemoryLog::new();
                 let link = SwitchLink::new(&id);
@@ -251,7 +255,9 @@ mod tests {
     fn single_node_cluster<'a> (id: &'a String) -> Cluster {
         Cluster {
             id: id.clone(),
-            peers: vec![id.clone()]
+            learning: false,
+            peers: vec![id.clone()],
+            learners: vec![]
         }
     }
 
@@ -273,7 +279,7 @@ mod tests {
         let ids: Vec<&String> = vec![&a, &b, &c];
 
         {
-            let switch = Switchboard::new(ids);
+            let switch = Switchboard::new(ids, vec![]);
 
             for _ in 0..100 {
                 switch.tick();
@@ -293,7 +299,7 @@ mod tests {
         let ids: Vec<&String> = vec![&a, &b, &c];
 
         {
-            let switch = Switchboard::new(ids.clone());
+            let switch = Switchboard::new(ids.clone(), vec![]);
 
             let mut rng = thread_rng();
             let mut flake = a.clone();
@@ -330,7 +336,7 @@ mod tests {
         let ids: Vec<&String> = vec![&a, &b, &c];
 
         {
-            let switch = Switchboard::new(ids);
+            let switch = Switchboard::new(ids, vec![]);
 
             for _ in 0..100 {
                 switch.tick();
@@ -368,6 +374,58 @@ mod tests {
     }
 
     #[test]
+    fn learner_catches_up () {
+        let _ = env_logger::try_init();
+        let a: String = "a".to_owned();
+        let b: String = "b".to_owned();
+        let c: String = "c".to_owned();
+
+        {
+            let switch = Switchboard::new(vec![&a, &b], vec![&c]);
+
+            for _ in 0..100 {
+                switch.tick();
+                switch.process_all_messages();
+            }
+
+            let mut final_index = 0;
+            let leader_log = {
+                let leader_id = switch.leader().unwrap();
+                let mut leader = switch.nodes.get(&leader_id).unwrap().borrow_mut();
+
+                for i in 0..47 {
+                    let committed = leader.raft.get_propose_index(Box::new(Record(i))).unwrap();
+                    assert!(committed >= final_index);
+                    final_index = committed;
+                }
+
+                leader.log.record_vec()
+            };
+
+            info!("proposal complete");
+
+            for _ in 0..50 {
+                switch.tick();
+                switch.process_messages(&ignore_one(c.clone()));
+            }
+
+            info!("getting learner back up to speed");
+
+            for _ in 0..50 {
+                switch.tick();
+                switch.process_all_messages();
+            }
+
+            for cell in switch.nodes.values() {
+                let node = cell.borrow();
+                let log = node.log.record_vec();
+                assert_eq!(leader_log, log);
+                assert_eq!(node.raft.volatile_state.commit_count, final_index + 1);
+            }
+        }
+    }
+
+    #[test]
     fn leader_ignores_duplicates () {
         let _ = env_logger::try_init();
         let a: String = "a".to_owned();
@@ -376,7 +434,7 @@ mod tests {
         let ids: Vec<&String> = vec![&a, &b, &c];
 
         {
-            let switch = Switchboard::new(ids);
+            let switch = Switchboard::new(ids, vec![]);
 
             for _ in 0..100 {
                 switch.tick();
@@ -425,7 +483,7 @@ mod tests {
 
         {
             let mut rng = thread_rng();
-            let switch = Switchboard::new(ids.clone());
+            let switch = Switchboard::new(ids.clone(), vec![]);
 
             for _ in 0..100 {
                 switch.tick();

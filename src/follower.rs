@@ -25,7 +25,7 @@ pub fn tick<'a, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
     };
 
     let timeout = raft.config.election_restart_ticks as u64;
-    if ticks > timeout {
+    if ticks > timeout && !raft.cluster.new.learning {
         info!("Leader timed out, becoming candidate");
         candidate::become_candidate(raft);
     }
@@ -87,7 +87,9 @@ mod tests {
     fn single_node_cluster<'a> (id: &'a String) -> Cluster {
         Cluster {
             id: id.clone(),
-            peers: vec![id.clone()]
+            learning: false,
+            peers: vec![id.clone()],
+            learners: vec![]
         }
     }
 

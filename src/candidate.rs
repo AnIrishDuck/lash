@@ -93,7 +93,7 @@ pub fn tick<'a, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
         }
 
         let votes_received = election.votes.len();
-        let quorum = (raft.cluster.new.peers.len() / 2) + 1;
+        let quorum = ((raft.cluster.new.peers.len() + 1) / 2) + 1;
         trace!(
             "current votes received: {}, quorum: {}, ticks left: {}",
             votes_received,

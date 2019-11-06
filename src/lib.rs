@@ -74,7 +74,9 @@ pub struct VolatileState {
 #[derive(Debug, Clone)]
 pub struct Cluster {
     pub id: String,
-    pub peers: Vec<String>
+    pub learning: bool,
+    pub peers: Vec<String>,
+    pub learners: Vec<String>
 }
 
 #[derive(Debug, Clone)]

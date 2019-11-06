@@ -15,23 +15,21 @@ struct Follower {
 }
 
 pub struct State {
-    followers: Vec<Follower>
+    followers: Vec<Follower>,
+    learners: Vec<Follower>
 }
 
 impl State {
     pub fn new () -> Self {
         State {
-            followers: vec![]
+            followers: vec![],
+            learners: vec![]
         }
     }
 }
 
-pub fn become_leader<'a, Record: Unique> (raft: &mut Raft<'a, Record>) {
-    let count = raft.volatile_state.commit_count;
-    info!("Becoming Leader with consensus commit count {}", count);
-    raft.role = Role::Leader;
-
-    let followers = raft.cluster.new.peers.iter().map(|id| {
+fn init_followers(v: &Vec<String>, count: u64) -> Vec<Follower> {
+    v.iter().map(|id| {
         Follower {
             id: id.clone(),
             sent: 0,
@@ -39,9 +37,18 @@ pub fn become_leader<'a, Record: Unique> (raft: &mut Raft<'a, Record>) {
             match_count: 0,
             pending: None
         }
-    }).collect();
+    }).collect()
+}
 
-    raft.volatile_state.leader = State { followers: followers };
+pub fn become_leader<'a, Record: Unique> (raft: &mut Raft<'a, Record>) {
+    let count = raft.volatile_state.commit_count;
+    info!("Becoming Leader with consensus commit count {}", count);
+    raft.role = Role::Leader;
+
+    raft.volatile_state.leader = State {
+        followers: init_followers(&raft.cluster.new.peers, count),
+        learners: init_followers(&raft.cluster.new.learners, count)
+    };
 }
 
 pub fn tick<'a, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
@@ -50,7 +57,7 @@ pub fn tick<'a, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
     let mut highest_term = 0;
     {
         let ref mut leader = raft.volatile_state.leader;
-        for ref mut follower in &mut leader.followers {
+        for ref mut follower in &mut leader.followers.iter_mut().chain(leader.learners.iter_mut()) {
             let send_more = match follower.pending {
                 Some(ref mut response) => {
                     match response.poll() {
