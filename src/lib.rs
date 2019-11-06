@@ -28,6 +28,12 @@ pub trait Unique {
     fn id (&self) -> String;
 }
 
+#[derive(Debug, Clone)]
+pub enum LogData<Record> {
+    Entry(Record),
+    ClusterChange(ClusterConfig)
+}
+
 /* prelude: definitions from page 4 of the raft paper */
 pub trait Log<Record: Unique> {
     fn get_current_term (&self) -> u64;
@@ -37,12 +43,12 @@ pub trait Log<Record: Unique> {
     fn set_voted_for (&mut self, candidate: Option<String>);
 
     fn get_count (&self) -> u64;
-    fn get_entry (&self, index: u64) -> Option<(u64, Box<Record>)>;
-    fn insert (&mut self, index: u64, records: Vec<(u64, Box<Record>)>);
+    fn get_entry (&self, index: u64) -> Option<(u64, Box<LogData<Record>>)>;
+    fn insert (&mut self, index: u64, records: Vec<(u64, Box<LogData<Record>>)>);
 
     fn lookup_id (&self, id: &String) -> Option<u64>;
 
-    fn get_batch (&self, index: u64) -> Vec<(u64, Box<Record>)>;
+    fn get_batch (&self, index: u64) -> Vec<(u64, Box<LogData<Record>>)>;
 }
 
 pub trait StateMachine<Record> {
@@ -90,7 +96,7 @@ pub struct AppendEntries<Record> {
     // we deviate from the spec here for clarity: there might be no prior entry
     // so we might not have anything to synchronize with
     previous_entry: Option<LogEntry>,
-    entries: Vec<(u64, Box<Record>)>,
+    entries: Vec<(u64, Box<LogData<Record>>)>,
     leader_commit: u64
 }
 
@@ -265,7 +271,7 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
                         let term = self.log.get_current_term();
                         let count = self.log.get_count();
                         trace!("Leader recording proposal {:?} => {}", r.id(), count);
-                        self.log.insert(count, vec![(term, r)]);
+                        self.log.insert(count, vec![(term, Box::new(LogData::Entry(*r)))]);
                         count
                     })
                 )

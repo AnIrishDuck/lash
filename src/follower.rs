@@ -91,8 +91,8 @@ mod tests {
         }
     }
 
-    fn boxed(raw: Vec<(u64, u64)>) -> Vec<(u64, Box<u64>)> {
-        raw.iter().map(|(t, v)| (*t, Box::new(*v))).collect()
+    fn boxed(raw: Vec<(u64, u64)>) -> Vec<(u64, Box<LogData<u64>>)> {
+        raw.iter().map(|(t, v)| (*t, Box::new(LogData::Entry(*v)))).collect()
     }
 
     impl Unique for u64 {
