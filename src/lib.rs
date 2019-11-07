@@ -72,17 +72,31 @@ pub struct VolatileState {
 }
 
 #[derive(Debug, Clone)]
-pub struct Cluster {
-    pub id: String,
-    pub learning: bool,
+pub struct NodeList {
     pub peers: Vec<String>,
     pub learners: Vec<String>
 }
 
 #[derive(Debug, Clone)]
 pub struct ClusterConfig {
-    pub old: Option<Cluster>,
-    pub new: Cluster
+    pub old: Option<NodeList>,
+    pub new: NodeList
+}
+
+impl ClusterConfig {
+    pub fn empty() -> Self {
+        ClusterConfig {
+            old: None,
+            new: NodeList {
+                peers: vec![],
+                learners: vec![]
+            }
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.old.is_none() && self.new.peers.is_empty() && self.new.learners.is_empty()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -131,8 +145,8 @@ pub trait Link<Record> {
     fn request_vote (&self, id: &String, request: RequestVote) -> Box<VoteResponse>;
 }
 
-#[derive(PartialEq, Clone)]
-pub enum Role { Follower, Candidate, Leader }
+#[derive(Debug, PartialEq, Clone)]
+pub enum Role { Follower, Candidate, Leader, Learner }
 
 #[derive(Clone)]
 pub struct Config {
@@ -146,6 +160,7 @@ pub static DEFAULT_CONFIG: Config = Config {
 };
 
 pub struct Raft<'a, Record: Unique + 'a> {
+    pub id: String,
     config: Config,
     pub cluster: ClusterConfig,
     pub volatile_state: VolatileState,
@@ -155,7 +170,7 @@ pub struct Raft<'a, Record: Unique + 'a> {
 }
 
 impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
-    pub fn new (cluster: Cluster, config: Config, log: Box<Log<Record> + 'a>, link: Box<Link<Record> + 'a>) -> Self {
+    pub fn new (id: String, config: Config, log: Box<Log<Record> + 'a>, link: Box<Link<Record> + 'a>) -> Self {
         let volatile = VolatileState {
             candidate: candidate::State::new(),
             commit_count: 0,
@@ -166,8 +181,9 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
         };
 
         Raft {
+            id: id,
             config: config,
-            cluster: ClusterConfig { old: None, new: cluster },
+            cluster: ClusterConfig::empty(),
             link: link,
             log: log,
             role: Role::Follower,
@@ -175,12 +191,16 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
         }
     }
 
+    pub fn force_peers(&mut self, peers: NodeList) {
+        self.cluster = ClusterConfig { old: None, new: peers }
+    }
+
     pub fn check_term(&mut self, message_term: u64, append: bool) -> u64 {
         let term = self.log.get_current_term();
         // # Rules for Servers / All Servers
         // If RPC request or response contains term T > currentTerm:
         // set currentTerm = T, convert to follower (§5.1)
-        let new_leader = message_term > term;
+        let new_leader = message_term > term && self.role != Role::Learner;
         // # Rules for Servers / Candidates:
         // If AppendEntries RPC received from new leader: convert to follower
         let candidate = self.role == Role::Candidate;
@@ -216,7 +236,7 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
         );
 
         let success = match self.role {
-            Role::Follower => {
+            Role::Follower | Role::Learner => {
                 self.volatile_state.current_leader = Some(source);
                 follower::append_entries(self, request)
             },
@@ -316,7 +336,8 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
         match self.role {
             Role::Follower => follower::tick(self),
             Role::Candidate => candidate::tick(self),
-            Role::Leader => leader::tick(self)
+            Role::Leader => leader::tick(self),
+            Role::Learner => ()
         }
 
         let current_commit = { self.volatile_state.commit_count };

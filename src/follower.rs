@@ -25,7 +25,7 @@ pub fn tick<'a, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
     };
 
     let timeout = raft.config.election_restart_ticks as u64;
-    if ticks > timeout && !raft.cluster.new.learning {
+    if ticks > timeout {
         info!("Leader timed out, becoming candidate");
         candidate::become_candidate(raft);
     }
@@ -83,16 +83,6 @@ mod tests {
 
     extern crate env_logger;
 
-
-    fn single_node_cluster<'a> (id: &'a String) -> Cluster {
-        Cluster {
-            id: id.clone(),
-            learning: false,
-            peers: vec![id.clone()],
-            learners: vec![]
-        }
-    }
-
     fn boxed(raw: Vec<(u64, u64)>) -> Vec<(u64, Box<LogData<u64>>)> {
         raw.iter().map(|(t, v)| (*t, Box::new(LogData::Entry(*v)))).collect()
     }
@@ -107,11 +97,10 @@ mod tests {
     fn append_entries_from_empty() {
         let _ = env_logger::try_init();
         let id = "me".to_owned();
-        let cluster = single_node_cluster(&id);
         let log: MemoryLog<u64> = MemoryLog::new();
         let link: NullLink = NullLink::new();
         {
-            let mut raft: Raft<u64> = Raft::new(cluster, DEFAULT_CONFIG.clone(), Box::new(log.clone()), Box::new(link));
+            let mut raft: Raft<u64> = Raft::new(id, DEFAULT_CONFIG.clone(), Box::new(log.clone()), Box::new(link));
 
             let response = raft.append_entries("leader".to_string(), AppendEntries {
                 term: 0,
@@ -143,11 +132,10 @@ mod tests {
     fn append_inconsistent_entries () {
         let _ = env_logger::try_init();
         let id = "me".to_owned();
-        let cluster = single_node_cluster(&id);
         let log: MemoryLog<u64> = MemoryLog::new();
         let link: NullLink = NullLink::new();
         {
-            let mut raft: Raft<u64> = Raft::new(cluster, DEFAULT_CONFIG.clone(), Box::new(log.clone()), Box::new(link));
+            let mut raft: Raft<u64> = Raft::new(id, DEFAULT_CONFIG.clone(), Box::new(log.clone()), Box::new(link));
 
             let response = raft.append_entries("leader".to_string(), AppendEntries {
                 term: 0,

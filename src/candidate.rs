@@ -35,6 +35,7 @@ pub fn become_candidate<'a, 'b, Record: Debug + Unique> (raft: &mut Raft<'a, Rec
 }
 
 pub fn start_election<'a, 'b, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
+    let id = raft.id.clone();
     let term = raft.log.get_current_term() + 1;
     raft.log.set_current_term(term);
     trace!("starting new election, term {}", term);
@@ -51,19 +52,19 @@ pub fn start_election<'a, 'b, Record: Debug + Unique> (raft: &mut Raft<'a, Recor
 
     let ref mut v: HashSet<String> = election.votes;
     *v = HashSet::new();
-    v.insert(cluster.id.clone());
-    raft.log.set_voted_for(Some(cluster.id.clone()));
+    v.insert(id.clone());
+    raft.log.set_voted_for(Some(id.clone()));
 
     let link = &raft.link;
 
-    election.pending = cluster.peers.iter().map(|id| {
-        let response: Box<VoteResponse> = link.request_vote(id, RequestVote {
-            candidate_id: cluster.id.to_string(),
+    election.pending = cluster.peers.iter().map(|peer_id| {
+        let response: Box<VoteResponse> = link.request_vote(peer_id, RequestVote {
+            candidate_id: id.clone(),
             last_log: last_log.clone().unwrap_or(LogEntry { term: 0, index: 0 }),
             term: term
         });
 
-        Pending { id: id.clone(), response: response }
+        Pending { id: peer_id.clone(), response: response }
     }).collect();
 }
 

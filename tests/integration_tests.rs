@@ -123,20 +123,19 @@ mod tests {
             let ids: Vec<&String> = peer_ids.clone().into_iter()
                                             .chain(learner_ids.clone().into_iter()).collect();
             let nodes: HashMap<String, RefCell<Node<'a>>> = ids.iter().map(|id| {
-                let cluster: Cluster = Cluster {
-                    id: (*id).clone(),
-                    learning: learner_ids.iter().find(|l| *l == id).is_some(),
+                let peers = NodeList {
                     peers: others(id, &peer_ids),
                     learners: others(id, &learner_ids)
                 };
                 let log = MemoryLog::new();
                 let link = SwitchLink::new(&id);
-                let raft = Raft::new(
-                    cluster,
+                let mut raft = Raft::new(
+                    (**id).clone(),
                     DEFAULT_CONFIG.clone(),
                     Box::new(log.clone()),
                     Box::new(link.clone())
                 );
+                raft.force_peers(peers);
 
                 let n: Node<'a> = Node {
                     raft: raft,
@@ -239,7 +238,7 @@ mod tests {
             self.nodes.values().flat_map(|n| {
                 let ref raft = n.borrow().raft;
                 if raft.role == Role::Leader {
-                    Some(raft.cluster.new.id.clone())
+                    Some(raft.id.clone())
                 } else {
                     None
                 }
@@ -248,16 +247,6 @@ mod tests {
 
         fn leader (&self) -> Option<String> {
             self.leaders().get(0).map(|v| (*v).clone())
-        }
-    }
-
-
-    fn single_node_cluster<'a> (id: &'a String) -> Cluster {
-        Cluster {
-            id: id.clone(),
-            learning: false,
-            peers: vec![id.clone()],
-            learners: vec![]
         }
     }
 
@@ -382,6 +371,11 @@ mod tests {
 
         {
             let switch = Switchboard::new(vec![&a, &b], vec![&c]);
+
+            {
+                let mut learner = switch.nodes.get(&c).unwrap().borrow_mut();
+                learner.raft.role = Role::Learner;
+            }
 
             for _ in 0..100 {
                 switch.tick();
@@ -574,8 +568,7 @@ mod tests {
         let link = NullLink::new();
         {
             let id = "me".to_owned();
-            let cluster = single_node_cluster(&id);
-            let mut raft: Raft<Record> = Raft::new(cluster, DEFAULT_CONFIG.clone(), Box::new(log.clone()), Box::new(link));
+            let mut raft: Raft<Record> = Raft::new(id, DEFAULT_CONFIG.clone(), Box::new(log.clone()), Box::new(link));
             let response = raft.request_vote(RequestVote {
                 term: 0,
                 candidate_id: "george michael".to_string(),
