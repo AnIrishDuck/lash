@@ -77,6 +77,12 @@ pub struct NodeList {
     pub learners: Vec<String>
 }
 
+impl NodeList {
+    fn has_peer(self: &Self, id: &String) -> bool {
+        self.peers.iter().find(|p| **p == *id).is_some()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ClusterConfig {
     pub old: Option<NodeList>,
