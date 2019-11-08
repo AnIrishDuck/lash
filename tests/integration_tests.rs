@@ -85,7 +85,7 @@ mod tests {
 
     impl Link<Record> for SwitchLink {
         fn append_entries(&self, id: &String, r: AppendEntries<Record>) -> Box<AppendResponse> {
-            trace!("{} => {:?} => {}", self.id, r, id);
+            trace!("{} => {} : {:?}", self.id, id, r);
             let ref mut calls = self.append.borrow_mut();
             assert!(!calls.contains_key(id));
             let call = Call::new(r);
@@ -94,7 +94,7 @@ mod tests {
         }
 
         fn request_vote (&self, id: &String, r: RequestVote) -> Box<VoteResponse> {
-            trace!("{} => {:?} => {}", self.id, r, id);
+            trace!("{} => {} : {:?}", self.id, id, r);
             let ref mut calls = self.vote.borrow_mut();
             assert!(!calls.contains_key(id));
             let call = Call::new(r);
@@ -187,17 +187,18 @@ mod tests {
                     let mut inner = node.borrow_mut();
                     let append = inner.link.append.borrow();
                     for (id, call) in append.iter() {
-                        let rx = id;
-                        let tx = &inner.link.id;
+                        let tx = id;
+                        let rx = &inner.link.id;
                         let request = call.request.clone();
 
                         let mut other = self.nodes.get(id).unwrap().borrow_mut();
 
                         let result = if arbiter(tx.clone(), rx.clone()) {
-                            trace!("resolving append {} => {}", tx, rx);
-                            Ok(other.raft.append_entries(rx.clone(), request))
+                            let response = other.raft.append_entries(rx.clone(), request);
+                            trace!("{} => {} : {:?}", tx, rx, response);
+                            Ok(response)
                         } else {
-                            trace!("rejecting append {} => {}", tx, rx);
+                            trace!("{} =| {} : rejected", tx, rx);
                             Err("rejection hurts".to_owned())
                         };
                         call.resolve(result);
@@ -208,18 +209,19 @@ mod tests {
                     let mut inner = node.borrow_mut();
                     let votes = inner.link.vote.borrow();
                     for (id, call) in votes.iter() {
-                        let rx = id;
-                        let tx = &inner.link.id;
+                        let tx = id;
+                        let rx = &inner.link.id;
                         let request = call.request.clone();
 
                         let mut other = self.nodes.get(id).unwrap().borrow_mut();
 
 
                         let result = if arbiter(tx.clone(), rx.clone()) {
-                            trace!("resolving vote {} => {}", tx, rx);
-                            Ok(other.raft.request_vote(request))
+                            let response = other.raft.request_vote(request);
+                            trace!("{} => {} : {:?}", tx, rx, response);
+                            Ok(response)
                         } else {
-                            trace!("rejecting vote {} => {}", tx, rx);
+                            trace!("{} =| {} : rejected", tx, rx);
                             Err("rejection hurts".to_owned())
                         };
                         call.resolve(result);
