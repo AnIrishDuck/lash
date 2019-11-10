@@ -1,4 +1,4 @@
-use crate::{Log, LogData, Unique};
+use crate::{ClusterConfig, Log, LogData, Unique};
 
 use std::cell::RefCell;
 use std::cmp::min;
@@ -76,6 +76,15 @@ impl<Record: Clone + Debug + Unique> Log<Record> for MemoryLog<Record> {
         let ref mut records = self.state.borrow_mut().records;
         records.truncate(index as usize);
         records.extend(update);
+    }
+
+    fn get_latest_config (&self) -> Option<ClusterConfig> {
+        self.state.borrow().records.iter().rev().flat_map(|(_term, d)| {
+            match **d {
+                LogData::ClusterChange(ref cluster) => Some(cluster.clone()),
+                _ => None
+            }
+        }).next()
     }
 
     fn lookup_id (&self, id: &String) -> Option<u64> {

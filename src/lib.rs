@@ -47,6 +47,7 @@ pub trait Log<Record: Unique> {
     fn insert (&mut self, index: u64, records: Vec<(u64, Box<LogData<Record>>)>);
 
     fn lookup_id (&self, id: &String) -> Option<u64>;
+    fn get_latest_config (&self) -> Option<ClusterConfig>;
 
     fn get_batch (&self, index: u64) -> Vec<(u64, Box<LogData<Record>>)>;
 }
@@ -189,7 +190,7 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
         Raft {
             id: id,
             config: config,
-            cluster: ClusterConfig::empty(),
+            cluster: log.get_latest_config().unwrap_or(ClusterConfig::empty()),
             link: link,
             log: log,
             role: Role::Follower,
@@ -249,6 +250,11 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
             _ => false
         };
         let response = Append { term: current_term, success: success };
+
+        match self.role {
+            Role::Follower => { self.log.get_latest_config().map(|c| self.cluster = c); },
+            _ => ()
+        };
 
         debug!("TX: {:?}", response);
         response
