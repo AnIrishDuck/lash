@@ -205,4 +205,21 @@ mod tests {
             assert_eq!(raft.role, Role::Leader)
         }
     }
+
+    #[test]
+    fn promotes_via_old_quorum() {
+        let _ = env_logger::try_init();
+        let id = "me".to_owned();
+        let log: MemoryLog<u64> = MemoryLog::new();
+        let link: NullLink = NullLink::new();
+        {
+            let mut raft: Raft<u64> = Raft::new(id, DEFAULT_CONFIG.clone(), Box::new(log.clone()), Box::new(link));
+            become_candidate(&mut raft);
+            setup_votes(&mut raft, vec!["me", "b", "c"], vec!["me", "e"]);
+
+            tick(&mut raft);
+
+            assert_eq!(raft.role, Role::Leader)
+        }
+    }
 }
