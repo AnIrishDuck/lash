@@ -340,7 +340,7 @@ mod tests {
                 let mut leader = switch.nodes.get(&leader_id).unwrap().borrow_mut();
 
                 for i in 0..47 {
-                    let committed = leader.raft.get_propose_index(Box::new(Record(i))).unwrap();
+                    let committed = leader.raft.get_propose_index(Box::new(LogData::Entry(Record(i)))).unwrap();
                     assert!(committed >= final_index);
                     final_index = committed;
                 }
@@ -390,7 +390,7 @@ mod tests {
                 let mut leader = switch.nodes.get(&leader_id).unwrap().borrow_mut();
 
                 for i in 0..47 {
-                    let committed = leader.raft.get_propose_index(Box::new(Record(i))).unwrap();
+                    let committed = leader.raft.get_propose_index(Box::new(LogData::Entry(Record(i)))).unwrap();
                     assert!(committed >= final_index);
                     final_index = committed;
                 }
@@ -443,8 +443,8 @@ mod tests {
                 let mut leader = switch.nodes.get(&leader_id).unwrap().borrow_mut();
 
                 for i in 0..47 {
-                    let committed = leader.raft.get_propose_index(Box::new(Record(i))).unwrap();
-                    let other = leader.raft.get_propose_index(Box::new(Record(i))).unwrap();
+                    let committed = leader.raft.get_propose_index(Box::new(LogData::Entry(Record(i)))).unwrap();
+                    let other = leader.raft.get_propose_index(Box::new(LogData::Entry(Record(i)))).unwrap();
                     assert!(committed >= final_index);
                     assert!(committed == other);
                     final_index = committed;

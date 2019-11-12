@@ -3,6 +3,7 @@ extern crate env_logger;
 extern crate rand;
 extern crate tokio;
 extern crate futures;
+extern crate uuid;
 
 use logging::{debug, error, trace};
 
@@ -32,6 +33,15 @@ pub trait Unique {
 pub enum LogData<Record> {
     Entry(Record),
     ClusterChange(ClusterConfig)
+}
+
+impl<Record: Unique> Unique for LogData<Record> {
+    fn id (&self) -> String {
+        match self {
+            LogData::Entry(r) => r.id(),
+            LogData::ClusterChange(c) => c.id.clone()
+        }
+    }
 }
 
 /* prelude: definitions from page 4 of the raft paper */
@@ -87,7 +97,8 @@ impl NodeList {
 #[derive(Debug, Clone)]
 pub struct ClusterConfig {
     pub old: Option<NodeList>,
-    pub new: NodeList
+    pub new: NodeList,
+    pub id: String
 }
 
 impl ClusterConfig {
@@ -97,7 +108,8 @@ impl ClusterConfig {
             new: NodeList {
                 peers: vec![],
                 learners: vec![]
-            }
+            },
+            id: format!("{}", Uuid::new_v4())
         }
     }
 
@@ -199,7 +211,7 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
     }
 
     pub fn force_peers(&mut self, peers: NodeList) {
-        self.cluster = ClusterConfig { old: None, new: peers }
+        self.cluster = ClusterConfig { old: None, new: peers, id: format!("{}", Uuid::new_v4()) }
     }
 
     pub fn check_term(&mut self, message_term: u64, append: bool) -> u64 {
@@ -297,7 +309,7 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
         response
     }
 
-    pub fn get_propose_index (&mut self, r: Box<Record>) -> Option<u64> {
+    pub fn get_propose_index (&mut self, r: Box<LogData<Record>>) -> Option<u64> {
         match self.role {
             Role::Leader => {
                 Some(
@@ -305,7 +317,7 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
                         let term = self.log.get_current_term();
                         let count = self.log.get_count();
                         trace!("Leader recording proposal {:?} => {}", r.id(), count);
-                        self.log.insert(count, vec![(term, Box::new(LogData::Entry(*r)))]);
+                        self.log.insert(count, vec![(term, r)]);
                         count
                     })
                 )
@@ -315,7 +327,7 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
     }
 
     pub fn propose (&mut self, r: Box<Record>) -> FutureProgress {
-        let proposal_valid = self.get_propose_index(r);
+        let proposal_valid = self.get_propose_index(Box::new(LogData::Entry(*r)));
         let (send, recv) = channel();
 
         match proposal_valid {

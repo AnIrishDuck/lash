@@ -161,7 +161,8 @@ mod tests {
             new: NodeList {
                 peers: nodes(vec!["a", "e", "f", "g"]),
                 learners: vec![]
-            }
+            },
+            id: String::from("config")
         };
 
         raft.volatile_state.candidate = State {

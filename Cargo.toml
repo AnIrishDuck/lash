@@ -10,3 +10,4 @@ futures = "0.1"
 log = "0.4"
 rand = "0.5"
 tokio = "0.1.11"
+uuid = { version = "0.8", features = ["v4"] }
