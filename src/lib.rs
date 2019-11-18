@@ -5,7 +5,7 @@ extern crate tokio;
 extern crate futures;
 extern crate uuid;
 
-use logging::{debug, error, trace};
+use logging::{debug, trace, warn};
 
 use tokio::prelude::Async;
 use futures::{future, Future};
@@ -233,7 +233,7 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
             }
 
             for (_, send) in self.volatile_state.pending.iter() {
-                send.send(false);
+                Raft::<Record>::send_and_log_drop(&send, false);
             }
             self.volatile_state.pending = BTreeMap::new();
 
@@ -332,12 +332,12 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
 
         match proposal_valid {
             Some(ix) => {
-                if ix < self.volatile_state.commit_count { send.send(true).unwrap() }
+                if ix < self.volatile_state.commit_count { Raft::<Record>::send_and_log_drop(&send, true); }
                 else {
                     self.volatile_state.pending.insert(ix, send);
                 }
             },
-            None => { send.send(false).unwrap() }
+            None => { Raft::<Record>::send_and_log_drop(&send, false); }
         }
 
         FutureProgress {
@@ -367,12 +367,17 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
         let current_commit = { self.volatile_state.commit_count };
         for ix in prior_commit..current_commit {
             let rm = match self.volatile_state.pending.get(&ix) {
-                Some(channel) => { channel.send(true); true },
+                Some(channel) => { Raft::<Record>::send_and_log_drop(&channel, true) },
                 None => false
             };
 
             if rm { self.volatile_state.pending.remove(&ix); }
         }
+    }
+
+    fn send_and_log_drop(channel: &Sender<bool>, v: bool) -> bool {
+        channel.send(v).unwrap_or_else(|_e| warn!("future dropped before task finished"));
+        v
     }
 }
 
