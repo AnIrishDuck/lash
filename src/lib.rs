@@ -13,6 +13,7 @@ use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
 use std::collections::BTreeMap;
 use std::cmp::min;
 use std::fmt::Debug;
+use uuid::Uuid;
 
 mod follower;
 mod candidate;
