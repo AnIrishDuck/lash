@@ -51,6 +51,10 @@ pub fn become_leader<'a, Record: Unique> (raft: &mut Raft<'a, Record>) {
     };
 }
 
+#[cfg(not(feature = "old_futures"))]
+pub fn tick<'a, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) { }
+
+#[cfg(feature = "old_futures")]
 pub fn tick<'a, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
     let term = raft.log.get_current_term();
 

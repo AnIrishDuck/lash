@@ -3,9 +3,15 @@ use crate::*;
 use logging::{debug, error, info, trace};
 use std::collections::HashSet;
 use std::cmp::max;
+#[cfg(not(feature = "old_futures"))]
+use futures::task::Context;
+#[cfg(not(feature = "old_futures"))]
+use futures::stream::futures_unordered::FuturesUnordered;
 use rand::prelude::*;
-use tokio::prelude::*;
+#[cfg(not(feature = "old_futures"))]
+use futures::stream::StreamExt;
 
+#[cfg(feature = "old_futures")]
 struct Pending {
     id: String,
     response: Box<VoteResponse>
@@ -15,6 +21,7 @@ pub struct State {
     new_votes: HashSet<String>,
     old_votes: HashSet<String>,
     ticks: usize,
+    #[cfg(feature = "old_futures")]
     pending: Vec<Pending>
 }
 
@@ -24,6 +31,7 @@ impl State {
             new_votes: HashSet::new(),
             old_votes: HashSet::new(),
             ticks: 0,
+            #[cfg(feature = "old_futures")]
             pending: vec![]
         }
     }
@@ -42,6 +50,7 @@ fn init_votes(id: &String) -> HashSet<String> {
     votes
 }
 
+#[cfg(feature = "old_futures")]
 pub fn start_election<'a, 'b, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
     let id = raft.id.clone();
     let term = raft.log.get_current_term() + 1;
@@ -75,6 +84,65 @@ pub fn start_election<'a, 'b, Record: Debug + Unique> (raft: &mut Raft<'a, Recor
     }).collect();
 }
 
+#[cfg(not(feature = "old_futures"))]
+pub async fn start_election<'a, 'b, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
+    let id = raft.id.clone();
+    let term = raft.log.get_current_term() + 1;
+    raft.log.set_current_term(term);
+    trace!("starting new election, term {}", term);
+
+    let last_log = raft.get_last_log_entry();
+
+    let ref mut state = raft.volatile_state;
+    let ref cluster = raft.cluster.new;
+
+    let ref config = raft.config;
+    let ref mut election = state.candidate;
+    let jitter = random::<usize>() % config.election_restart_jitter;
+    election.ticks = config.election_restart_ticks + jitter;
+
+    election.old_votes = init_votes(&id);
+    election.new_votes = init_votes(&id);
+    raft.log.set_voted_for(Some(id.clone()));
+
+    let link = &raft.link;
+
+    let responses: FuturesUnordered<_> = cluster.peers.iter().map(|peer_id| {
+        use future::FutureExt;
+        let response: Pin<Box<VoteResponse>> = Box::pin(link.request_vote(peer_id, RequestVote {
+            candidate_id: id.clone(),
+            last_log: last_log.clone().unwrap_or(LogEntry { term: 0, index: 0 }),
+            term: term
+        }));
+
+        response.map(move |v| ((*peer_id).clone(), v))
+        // Pending { id: peer_id.clone(), response: response }
+    }).collect();
+
+    let mut new_votes = HashSet::new();
+    let mut old_votes = HashSet::new();
+    let tw = responses.take_while(|(peer_id, message)| {
+        let vote_granted = message.as_ref().map(|r| r.vote_granted).unwrap_or(false);
+        if vote_granted {
+            if raft.cluster.old.as_ref().map(|l| l.has_peer(&id)).unwrap_or(false) {
+                old_votes.insert(peer_id.clone());
+            }
+            if raft.cluster.new.has_peer(&id) {
+                new_votes.insert(peer_id.clone());
+            }
+
+            let old_quorum = raft.cluster.old.as_ref().map(
+                |l| check_quorum("old", &old_votes, l)
+            ).unwrap_or(false);
+            let new_quorum = check_quorum("new", &new_votes, &raft.cluster.new);
+            future::ready(!(old_quorum || new_quorum))
+        } else {
+            future::ready(true)
+        }
+    });
+    tw.collect::<Vec<_>>().await;
+}
+
 pub fn check_quorum(list: &str, votes: &HashSet<String>, nodes: &NodeList) -> bool {
     let votes_received = votes.len();
     let quorum = ((nodes.peers.len() + 1) / 2) + 1;
@@ -87,6 +155,10 @@ pub fn check_quorum(list: &str, votes: &HashSet<String>, nodes: &NodeList) -> bo
     votes_received >= quorum
 }
 
+#[cfg(not(feature = "old_futures"))]
+pub fn tick<'a, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) { }
+
+#[cfg(feature = "old_futures")]
 pub fn tick<'a, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
     let term = raft.log.get_current_term();
     let mut highest_term = 0;
@@ -141,7 +213,7 @@ pub fn tick<'a, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "old_futures"))]
 mod tests {
     use super::*;
     use crate::log::MemoryLog;

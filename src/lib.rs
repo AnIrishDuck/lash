@@ -8,11 +8,18 @@ extern crate uuid;
 use logging::{debug, trace, warn};
 
 use tokio::prelude::Async;
+#[cfg(not(feature = "old_futures"))]
 use futures::{future, Future};
+#[cfg(feature = "old_futures")]
+use futures1::{future, Future};
 use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
 use std::collections::BTreeMap;
 use std::cmp::min;
 use std::fmt::Debug;
+#[cfg(not(feature = "old_futures"))]
+use futures::task::{Context, Poll};
+#[cfg(not(feature = "old_futures"))]
+use std::pin::Pin;
 use uuid::Uuid;
 
 mod follower;
@@ -142,7 +149,11 @@ pub struct Append {
     success: bool
 }
 
-pub type AppendResponse = Future<Item=Append, Error=String>;
+#[cfg(not(feature = "old_futures"))]
+pub type AppendResponse = dyn Future<Output=Result<Append, String>>;
+
+#[cfg(feature = "old_futures")]
+pub type AppendResponse = dyn Future<Item=Append, Error=String>;
 
 #[derive(Debug, Clone)]
 pub struct RequestVote {
@@ -157,7 +168,11 @@ pub struct Vote {
     pub vote_granted: bool
 }
 
-pub type VoteResponse = Future<Item=Vote, Error=String>;
+#[cfg(not(feature = "old_futures"))]
+pub type VoteResponse = dyn Future<Output=Result<Vote, String>> + Unpin;
+
+#[cfg(feature = "old_futures")]
+pub type VoteResponse = dyn Future<Item=Vote, Error=String>;
 
 pub trait Link<Record> {
     fn append_entries(&self,id: &String, request: AppendEntries<Record>) -> Box<AppendResponse>;
@@ -387,6 +402,27 @@ pub struct FutureProgress {
     ix: Option<u64>
 }
 
+#[cfg(not(feature = "old_futures"))]
+impl Future for FutureProgress
+{
+    type Output = Result<u64, String>;
+
+    fn poll (self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        match self.valid.try_recv() {
+            Ok(valid) => {
+                if valid {
+                    Poll::Ready(Ok(self.ix.unwrap()))
+                } else {
+                    Poll::Ready(Err("cluster change".to_string()))
+                }
+            },
+            Err(TryRecvError::Empty) => Poll::Pending,
+            Err(TryRecvError::Disconnected) => Poll::Ready(Err("raft destroyed".to_string()))
+        }
+    }
+}
+
+#[cfg(feature = "old_futures")]
 impl Future for FutureProgress
 {
     type Item = u64;
