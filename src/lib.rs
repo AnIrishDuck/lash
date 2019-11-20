@@ -230,6 +230,14 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
         self.cluster = ClusterConfig { old: None, new: peers, id: format!("{}", Uuid::new_v4()) }
     }
 
+    pub fn must_follow(&mut self, message_term: u64) -> bool {
+        let term = self.log.get_current_term();
+        // # Rules for Servers / All Servers
+        // If RPC request or response contains term T > currentTerm:
+        // set currentTerm = T, convert to follower (§5.1)
+        message_term > term
+    }
+
     pub fn check_term(&mut self, message_term: u64, append: bool) -> u64 {
         let term = self.log.get_current_term();
         // # Rules for Servers / All Servers
@@ -373,6 +381,9 @@ impl<'a, Record: Unique + Debug + 'a> Raft<'a, Record> {
 
     pub fn tick (&mut self) {
         let prior_commit = { self.volatile_state.commit_count };
+
+
+        #[cfg(feature = "old_futures")]
         match self.role {
             Role::Follower => follower::tick(self),
             Role::Candidate => candidate::tick(self),

@@ -17,6 +17,7 @@ pub fn become_follower<Record: Unique> (raft: &mut Raft<Record>) {
     raft.role = Role::Follower;
 }
 
+#[cfg(feature = "old_futures")]
 pub fn tick<'a, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
     let ticks = {
         let ref mut ticks = raft.volatile_state.follower.heartbeat_ticks;

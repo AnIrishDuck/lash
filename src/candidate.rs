@@ -37,6 +37,7 @@ impl State {
     }
 }
 
+#[cfg(feature = "old_futures")]
 pub fn become_candidate<'a, 'b, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
     info!("Becoming Candidate");
     raft.volatile_state.current_leader = None;
@@ -85,7 +86,7 @@ pub fn start_election<'a, 'b, Record: Debug + Unique> (raft: &mut Raft<'a, Recor
 }
 
 #[cfg(not(feature = "old_futures"))]
-pub async fn start_election<'a, 'b, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
+pub async fn election<'a, 'b, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) -> Role {
     let id = raft.id.clone();
     let term = raft.log.get_current_term() + 1;
     raft.log.set_current_term(term);
@@ -116,31 +117,35 @@ pub async fn start_election<'a, 'b, Record: Debug + Unique> (raft: &mut Raft<'a,
         }));
 
         response.map(move |v| ((*peer_id).clone(), v))
-        // Pending { id: peer_id.clone(), response: response }
     }).collect();
 
-    let mut new_votes = HashSet::new();
-    let mut old_votes = HashSet::new();
-    let tw = responses.take_while(|(peer_id, message)| {
+    let mut has_quorum = false;
+    let cluster = raft.cluster.clone();
+
+    let votes = responses.take_while(|(peer_id, message)| {
         let vote_granted = message.as_ref().map(|r| r.vote_granted).unwrap_or(false);
         if vote_granted {
-            if raft.cluster.old.as_ref().map(|l| l.has_peer(&id)).unwrap_or(false) {
-                old_votes.insert(peer_id.clone());
+            if cluster.old.as_ref().map(|l| l.has_peer(&peer_id)).unwrap_or(false) {
+                election.old_votes.insert(peer_id.clone());
             }
-            if raft.cluster.new.has_peer(&id) {
-                new_votes.insert(peer_id.clone());
+            if cluster.new.has_peer(&peer_id) {
+                election.new_votes.insert(peer_id.clone());
             }
 
-            let old_quorum = raft.cluster.old.as_ref().map(
-                |l| check_quorum("old", &old_votes, l)
+            let old_quorum = cluster.old.as_ref().map(
+                |l| check_quorum("old", &election.old_votes, l)
             ).unwrap_or(false);
-            let new_quorum = check_quorum("new", &new_votes, &raft.cluster.new);
-            future::ready(!(old_quorum || new_quorum))
+            let new_quorum = check_quorum("new", &election.new_votes, &cluster.new);
+            has_quorum = old_quorum || new_quorum;
+            future::ready(!has_quorum)
         } else {
             future::ready(true)
         }
     });
-    tw.collect::<Vec<_>>().await;
+
+    votes.collect::<Vec<_>>().await;
+
+    if has_quorum { Role::Leader } else { Role::Candidate }
 }
 
 pub fn check_quorum(list: &str, votes: &HashSet<String>, nodes: &NodeList) -> bool {
@@ -154,9 +159,6 @@ pub fn check_quorum(list: &str, votes: &HashSet<String>, nodes: &NodeList) -> bo
     );
     votes_received >= quorum
 }
-
-#[cfg(not(feature = "old_futures"))]
-pub fn tick<'a, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) { }
 
 #[cfg(feature = "old_futures")]
 pub fn tick<'a, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
@@ -209,6 +211,53 @@ pub fn tick<'a, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
         if timeout {
             debug!("election timed out, restarting");
             start_election(raft);
+        }
+    }
+}
+
+#[cfg(all(test, not(feature = "old_futures")))]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use futures::executor::block_on;
+    use crate::log::MemoryLog;
+
+    extern crate env_logger;
+
+    struct FakeLink {
+        appends: HashMap<String, Append>,
+        votes: HashMap<String, Vote>,
+    }
+
+    impl<Record> Link<Record> for FakeLink {
+        fn append_entries(&self, id: &String, _request: AppendEntries<Record>) -> Box<AppendResponse> {
+            Box::new(future::ok(self.appends.get(id).unwrap().clone()))
+        }
+
+        fn request_vote (&self, id: &String, _request: RequestVote) -> Box<VoteResponse> {
+            Box::new(future::ok(self.votes.get(id).unwrap().clone()))
+        }
+    }
+
+    #[test]
+    fn elects_leader() {
+        let _ = env_logger::try_init();
+        let id = "me".to_owned();
+        let log: MemoryLog<u64> = MemoryLog::new();
+        let votes: HashMap<String, Vote> = vec![("a", true), ("b", true), ("c", false)].iter()
+            .map(|(id, g)| (id.to_string(), Vote { term: 0, vote_granted: *g })).collect();
+        let link: FakeLink = FakeLink {
+            appends: HashMap::new(),
+            votes: votes
+        };
+        {
+            let mut raft: Raft<u64> = Raft::new(id, DEFAULT_CONFIG.clone(), Box::new(log.clone()), Box::new(link));
+            raft.force_peers(NodeList {
+                peers: vec!["a", "b", "c"].iter().map(|v| v.to_string()).collect(),
+                learners: vec![]
+            });
+
+            assert_eq!(block_on(election(&mut raft)), Role::Leader);
         }
     }
 }
