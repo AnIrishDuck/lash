@@ -174,10 +174,16 @@ pub type VoteResponse = dyn Future<Output=Result<Vote, String>> + Unpin;
 #[cfg(feature = "old_futures")]
 pub type VoteResponse = dyn Future<Item=Vote, Error=String>;
 
+#[cfg(not(feature = "old_futures"))]
+type Timeout = dyn Future<Output = ()>;
+
 pub trait Link<Record> {
     fn append_entries(&self,id: &String, request: AppendEntries<Record>) -> Box<AppendResponse>;
 
     fn request_vote (&self, id: &String, request: RequestVote) -> Box<VoteResponse>;
+
+    #[cfg(not(feature = "old_futures"))]
+    fn timeout (&self, ms: u64) -> Box<Timeout>;
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -469,5 +475,10 @@ impl<Record> Link<Record> for NullLink {
 
     fn request_vote (&self, _id: &String, _request: RequestVote) -> Box<VoteResponse> {
         Box::new(future::ok(Vote { term: 0, vote_granted: false }))
+    }
+
+    #[cfg(not(feature = "old_futures"))]
+    fn timeout (&self, _ms: u64) -> Box<dyn Future<Output = ()>> {
+        Box::new(future::ready(()))
     }
 }

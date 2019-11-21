@@ -143,7 +143,10 @@ pub async fn election<'a, 'b, Record: Debug + Unique> (raft: &mut Raft<'a, Recor
         }
     });
 
-    votes.collect::<Vec<_>>().await;
+    let jitter = random::<usize>() % config.election_restart_jitter;
+    let ticks = (config.election_restart_ticks + jitter) as u64;
+    let timeout: Pin<Box<Timeout>> = link.timeout(ticks).into();
+    future::select(votes.collect::<Vec<_>>(), timeout).await;
 
     if has_quorum { Role::Leader } else { Role::Candidate }
 }
@@ -219,25 +222,45 @@ pub fn tick<'a, Record: Debug + Unique> (raft: &mut Raft<'a, Record>) {
 mod tests {
     use super::*;
     use std::collections::HashMap;
-    use futures::executor::block_on;
+    use futures::executor::{block_on, LocalPool};
+    use futures::future::{abortable, AbortHandle, Pending};
+    use futures::pin_mut;
     use crate::log::MemoryLog;
     use std::cell::RefCell;
 
     extern crate env_logger;
 
     struct FakeLink {
-        appends: RefCell<HashMap<String, Box<AppendResponse>>>,
-        votes: RefCell<HashMap<String, Box<VoteResponse>>>,
+        mocks: RefCell<Mocks>,
+    }
+
+    struct Mocks {
+        appends: HashMap<String, Box<AppendResponse>>,
+        votes: HashMap<String, Box<VoteResponse>>,
+        timeout: Box<dyn Future<Output = ()>>
     }
 
     impl<Record> Link<Record> for FakeLink {
         fn append_entries(&self, id: &String, _request: AppendEntries<Record>) -> Box<AppendResponse> {
-            self.appends.borrow_mut().remove(id).unwrap()
+            self.mocks.borrow_mut().appends.remove(id).unwrap()
         }
 
         fn request_vote (&self, id: &String, _request: RequestVote) -> Box<VoteResponse> {
-            self.votes.borrow_mut().remove(id).unwrap()
+            self.mocks.borrow_mut().votes.remove(id).unwrap()
         }
+
+        fn timeout (&self, _ms: u64) -> Box<dyn Future<Output = ()>> {
+            let ref mut timeout = self.mocks.borrow_mut().timeout;
+
+            std::mem::replace(timeout, Box::new(future::pending()))
+        }
+    }
+
+    fn fake_timeout() -> (Box<Timeout>, AbortHandle) {
+        use futures::future::FutureExt;
+        let pending: Pending<()> = future::pending();
+        let (fire, abort) = abortable(pending);
+        (Box::new(fire.map(|_v| ())), abort)
     }
 
     fn immediate_vote(v: Vote) -> Box<VoteResponse> {
@@ -255,9 +278,12 @@ mod tests {
         let log: MemoryLog<u64> = MemoryLog::new();
         let votes: HashMap<String, Box<VoteResponse>> = vec![("a", true), ("b", true), ("c", false)].iter()
             .map(|(id, g)| (id.to_string(), immediate_vote(Vote { term: 0, vote_granted: *g }))).collect();
-        let link: FakeLink = FakeLink {
-            appends: RefCell::new(HashMap::new()),
-            votes: RefCell::new(votes)
+        let link = FakeLink {
+            mocks: RefCell::new(Mocks {
+                appends: HashMap::new(),
+                votes: votes,
+                timeout: Box::new(future::pending())
+            })
         };
         {
             let mut raft: Raft<u64> = Raft::new(id, DEFAULT_CONFIG.clone(), Box::new(log.clone()), Box::new(link));
@@ -277,9 +303,12 @@ mod tests {
         let log: MemoryLog<u64> = MemoryLog::new();
         let votes: HashMap<String, Box<VoteResponse>> = vec![("a", true), ("b", false), ("c", false)].iter()
             .map(|(id, g)| (id.to_string(), immediate_vote(Vote { term: 0, vote_granted: *g }))).collect();
-        let link: FakeLink = FakeLink {
-            appends: RefCell::new(HashMap::new()),
-            votes: RefCell::new(votes)
+        let link = FakeLink {
+            mocks: RefCell::new(Mocks {
+                appends: HashMap::new(),
+                votes: votes,
+                timeout: Box::new(future::pending())
+            })
         };
         {
             let mut raft: Raft<u64> = Raft::new(id, DEFAULT_CONFIG.clone(), Box::new(log.clone()), Box::new(link));
@@ -309,9 +338,12 @@ mod tests {
                 )
             }).collect();
 
-        let link: FakeLink = FakeLink {
-            appends: RefCell::new(HashMap::new()),
-            votes: RefCell::new(votes)
+        let link = FakeLink {
+            mocks: RefCell::new(Mocks {
+                appends: HashMap::new(),
+                votes: votes,
+                timeout: Box::new(future::pending())
+            })
         };
 
         {
@@ -323,6 +355,45 @@ mod tests {
 
             use crate::future::FutureExt;
             assert_eq!(election(&mut raft).now_or_never(), None);
+        }
+    }
+
+    #[test]
+    fn becomes_candidate_on_timeout() {
+        let _ = env_logger::try_init();
+        let id = "me".to_owned();
+        let log: MemoryLog<u64> = MemoryLog::new();
+        let votes: HashMap<String, Box<VoteResponse>> = vec![
+            ("a".to_string(), missing_vote()),
+            ("b".to_string(), missing_vote()),
+            ("c".to_string(), missing_vote())
+        ].into_iter().collect();
+
+        let (timeout, abort) = fake_timeout();
+        let link = FakeLink {
+            mocks: RefCell::new(Mocks {
+                appends: HashMap::new(),
+                votes: votes,
+                timeout: timeout
+            })
+        };
+
+        {
+            use futures_test::task::noop_context;
+
+            let mut raft: Raft<u64> = Raft::new(id, DEFAULT_CONFIG.clone(), Box::new(log.clone()), Box::new(link));
+            raft.force_peers(NodeList {
+                peers: vec!["a", "b", "c"].iter().map(|v| v.to_string()).collect(),
+                learners: vec![]
+            });
+
+            let elect = election(&mut raft);
+            let future = future::maybe_done(elect);
+            pin_mut!(future);
+            assert_eq!(future.as_mut().poll(&mut noop_context()), Poll::Pending);
+            abort.abort();
+            block_on(future.as_mut());
+            assert_eq!(future.as_mut().take_output(), Some(Role::Candidate));
         }
     }
 }
