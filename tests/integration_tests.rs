@@ -1,6 +1,6 @@
 extern crate log as logging;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "old_futures"))]
 mod tests {
     use lash::*;
     use lash::NullLink;
