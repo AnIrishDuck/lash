@@ -221,22 +221,31 @@ mod tests {
     use std::collections::HashMap;
     use futures::executor::block_on;
     use crate::log::MemoryLog;
+    use std::cell::RefCell;
 
     extern crate env_logger;
 
     struct FakeLink {
-        appends: HashMap<String, Append>,
-        votes: HashMap<String, Vote>,
+        appends: RefCell<HashMap<String, Box<AppendResponse>>>,
+        votes: RefCell<HashMap<String, Box<VoteResponse>>>,
     }
 
     impl<Record> Link<Record> for FakeLink {
         fn append_entries(&self, id: &String, _request: AppendEntries<Record>) -> Box<AppendResponse> {
-            Box::new(future::ok(self.appends.get(id).unwrap().clone()))
+            self.appends.borrow_mut().remove(id).unwrap()
         }
 
         fn request_vote (&self, id: &String, _request: RequestVote) -> Box<VoteResponse> {
-            Box::new(future::ok(self.votes.get(id).unwrap().clone()))
+            self.votes.borrow_mut().remove(id).unwrap()
         }
+    }
+
+    fn immediate_vote(v: Vote) -> Box<VoteResponse> {
+        Box::new(future::ok(v))
+    }
+
+    fn missing_vote() -> Box<VoteResponse> {
+        Box::new(future::pending())
     }
 
     #[test]
@@ -244,11 +253,11 @@ mod tests {
         let _ = env_logger::try_init();
         let id = "me".to_owned();
         let log: MemoryLog<u64> = MemoryLog::new();
-        let votes: HashMap<String, Vote> = vec![("a", true), ("b", true), ("c", false)].iter()
-            .map(|(id, g)| (id.to_string(), Vote { term: 0, vote_granted: *g })).collect();
+        let votes: HashMap<String, Box<VoteResponse>> = vec![("a", true), ("b", true), ("c", false)].iter()
+            .map(|(id, g)| (id.to_string(), immediate_vote(Vote { term: 0, vote_granted: *g }))).collect();
         let link: FakeLink = FakeLink {
-            appends: HashMap::new(),
-            votes: votes
+            appends: RefCell::new(HashMap::new()),
+            votes: RefCell::new(votes)
         };
         {
             let mut raft: Raft<u64> = Raft::new(id, DEFAULT_CONFIG.clone(), Box::new(log.clone()), Box::new(link));
@@ -258,6 +267,62 @@ mod tests {
             });
 
             assert_eq!(block_on(election(&mut raft)), Role::Leader);
+        }
+    }
+
+    #[test]
+    fn remains_candidate_on_failed_election() {
+        let _ = env_logger::try_init();
+        let id = "me".to_owned();
+        let log: MemoryLog<u64> = MemoryLog::new();
+        let votes: HashMap<String, Box<VoteResponse>> = vec![("a", true), ("b", false), ("c", false)].iter()
+            .map(|(id, g)| (id.to_string(), immediate_vote(Vote { term: 0, vote_granted: *g }))).collect();
+        let link: FakeLink = FakeLink {
+            appends: RefCell::new(HashMap::new()),
+            votes: RefCell::new(votes)
+        };
+        {
+            let mut raft: Raft<u64> = Raft::new(id, DEFAULT_CONFIG.clone(), Box::new(log.clone()), Box::new(link));
+            raft.force_peers(NodeList {
+                peers: vec!["a", "b", "c"].iter().map(|v| v.to_string()).collect(),
+                learners: vec![]
+            });
+
+            assert_eq!(block_on(election(&mut raft)), Role::Candidate);
+        }
+    }
+
+    #[test]
+    fn remains_pending_without_votes() {
+        let _ = env_logger::try_init();
+        let id = "me".to_owned();
+        let log: MemoryLog<u64> = MemoryLog::new();
+        let votes: HashMap<String, Box<VoteResponse>> = vec![("a", true), ("b", false), ("c", false)].iter()
+            .map(|(id, present)| {
+                (
+                    id.to_string(),
+                    if *present {
+                        immediate_vote(Vote { term: 0, vote_granted: true })
+                    } else {
+                        missing_vote()
+                    }
+                )
+            }).collect();
+
+        let link: FakeLink = FakeLink {
+            appends: RefCell::new(HashMap::new()),
+            votes: RefCell::new(votes)
+        };
+
+        {
+            let mut raft: Raft<u64> = Raft::new(id, DEFAULT_CONFIG.clone(), Box::new(log.clone()), Box::new(link));
+            raft.force_peers(NodeList {
+                peers: vec!["a", "b", "c"].iter().map(|v| v.to_string()).collect(),
+                learners: vec![]
+            });
+
+            use crate::future::FutureExt;
+            assert_eq!(election(&mut raft).now_or_never(), None);
         }
     }
 }
